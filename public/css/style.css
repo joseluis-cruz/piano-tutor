@@ -201,7 +201,8 @@ body:has(.edit-feedback:not([hidden])) .workspace{height:calc(100vh - var(--tran
 body:has(.edit-feedback:not([hidden])) .workspace{height:calc(100vh - var(--transport-height,90px) - 50px)}
 
 /* v0.59: franja fija de dos líneas, sin saltos al navegar entre notas. */
-.edit-feedback{height:67px;min-height:67px;max-height:67px;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;}
-body:has(.edit-feedback:not([hidden])) .workspace{height:calc(100vh - var(--transport-height,90px) - 67px);}
+.edit-feedback{height:50px;min-height:50px;max-height:50px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:safe center;overflow-y:auto;overflow-x:hidden;overflow-wrap:anywhere;}
+.edit-feedback>div{flex-shrink:0;}
+body:has(.edit-feedback:not([hidden])) .workspace{height:calc(100vh - var(--transport-height,90px) - 50px);}
 
 .active-metronome-indicator{border:1px solid #4f9dcc;background:#d9f0ff;color:#075985;border-radius:7px;padding:5px 10px;font-size:.78rem;font-weight:800;letter-spacing:.03em;white-space:nowrap;cursor:pointer;min-height:30px}.active-metronome-indicator:disabled{opacity:.4;cursor:default}.active-metronome-indicator:not(:disabled):hover{background:#bce6ff}.active-metronome-indicator:focus-visible{outline:2px solid white;outline-offset:2px}

@@ -1,5 +1,6 @@
 import { MusicXMLParser } from './music/MusicXMLParser.js';
 import { createMeasureRecognizer } from './session/pt_recognizer.js';
+import { buildReviewEntries } from './session/pt_review.js';
 import { createSession, PT_HAND } from './session/pt_session.js';
 import { PT_EVENT } from './core/pt_events.js';
 import { setMetronomeDrumKit } from './core/pt_metronome.js';
@@ -366,8 +367,10 @@ function refreshEditFeedback(){
   if(!editFeedback)return;
   if(reviewMode){
     editFeedback.replaceChildren();
-    const line=document.createElement('div');line.textContent=reviewMessage??'REVISIÓN · Utiliza ← y → para recorrer los errores.';
-    editFeedback.append(line);editFeedback.classList.remove('is-clear');editFeedback.hidden=false;return;
+    for(const message of (reviewMessage??'REVISIÓN · Utiliza ← y → para recorrer los errores.').split('\n')){
+      const line=document.createElement('div');line.textContent=message;editFeedback.append(line);
+    }
+    editFeedback.classList.toggle('is-clear',reviewEntries.length===0);editFeedback.hidden=false;return;
   }
   if(!editMode||!selectedNote){editFeedback.hidden=true;editFeedback.replaceChildren();return;}
   const candidates=notesAtTick(selectedNote.startTick).sort((a,b)=>a.staff-b.staff||a.pitch-b.pitch);
@@ -376,7 +379,7 @@ function refreshEditFeedback(){
   for(const note of candidates){if(!byStaff.has(note.staff))byStaff.set(note.staff,[]);byStaff.get(note.staff).push(note);}
   for(const [staff,notes] of byStaff){
     const hand=staff===1?'Mano derecha':staff===2?'Mano izquierda':`Pentagrama ${staff}`;
-    const names=notes.map(n=>pitchName(n.pitch)).join(' + ');
+    const names=notes.map(n=>pitchName(n.pitch)).join('+');
     const messages=notes.flatMap(note=>(evaluatedMessages.get(expectedSourceKey(note))??[]).map(msg=>({note,msg})));
     if(!messages.length){lines.push(`${hand} - ${names}`);continue;}
     hasErrors=true;
@@ -452,7 +455,7 @@ function enterReviewAtAdjacentError(direction){
   }else{
     moveScoreCursor(target.tick,true);
   }
-  reviewMessage=`REVISIÓN · ${target.message}`;
+  reviewMessage=target.message;
   updateSelectedUnexpectedMarker();setCursorAppearance(false);refreshEditFeedback();return true;
 }
 function enterEditAtAdjacentNote(direction){
@@ -858,10 +861,10 @@ function errorDiagnostic(item,evaluation,bpm,xmlDocument=null){
   const errors=[];
   const kinds=noteErrorKinds(item,evaluation);
   if(kinds.includes('pitch')){
-    const capturedLabel=Math.abs(captured.pitch-expected.pitch)<12
-      ? pitchName(captured.pitch).replace(/-?\d+$/,'').replace('♯',' sostenido').replace('♭',' bemol')+(pitchName(captured.pitch).includes('♯')?'':' natural')
-      : pitchName(captured.pitch);
-    const expectedLabel=Math.abs(captured.pitch-expected.pitch)<12 ? pitchName(expected.pitch).replace(/-?\d+$/,'') : pitchName(expected.pitch);
+    const capturedLabel=pitchName(captured.pitch);
+    const expectedLabel=Math.abs(captured.pitch-expected.pitch)<12
+      ? pitchName(expected.pitch).replace(/-?\d+$/,'')+(pitchName(expected.pitch).includes('♯')?'':' natural')
+      : pitchName(expected.pitch);
     errors.push({kind:'pitch',message:`Has interpretado ${capturedLabel} en lugar de ${expectedLabel}.`});
   }
   if(kinds.includes('timing')){
@@ -876,13 +879,13 @@ function errorDiagnostic(item,evaluation,bpm,xmlDocument=null){
     // La aproximación musical no debe crear un error nuevo y, si da la
     // figura escrita, evitamos comunicar un error contradictorio.
     if(performed!==written.label){
-      errors.push({kind:'duration',message:`Has mantenido la nota durante ${performed} cuando se esperaba ${written.label}.`});
+      errors.push({kind:'duration',message:`Has mantenido ${performed} cuando se esperaba ${written.label}.`});
     }
   }
   return errors;
 }
 function updateEvaluationPresentation(consolidated,results){
-  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;
+  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;reviewIndex=-1;reviewMessage=null;
   const evaluation=consolidated.evaluation??{};
   const diagnosticXml=new DOMParser().parseFromString(xmlText,'application/xml');
   const byMeasure=new Map((results.byMeasure??[]).map(row=>[row.measure,row]));
@@ -916,16 +919,8 @@ function updateEvaluationPresentation(consolidated,results){
   for(const row of results.byMeasure??[]){
     if(Number.isFinite(row.compliance))evaluatedMeasures.set(row.measure,complianceColor(row.compliance));
   }
-  const unique=new Map();
-  for(const item of consolidated.items??[]){
-    if(!item.expected||!noteErrorKinds(item,evaluation).length)continue;
-    const key=String(item.expected.startTick);
-    const message=errorDiagnostic(item,evaluation,lesson?.bpm,diagnosticXml).map(d=>d.message).join(' · ');
-    const existing=unique.get(key);
-    if(existing)existing.messages.push(message);
-    else unique.set(key,{tick:item.expected.startTick,measure:item.expected.measure,messages:[message]});
-  }
-  reviewEntries=[...unique.values()].map(item=>({tick:item.tick,measure:item.measure,message:item.messages.join(' · '),unexpected:false}));
+  reviewEntries=buildReviewEntries(consolidated.items??[],(jsonScore?.events??[]).filter(e=>e.type==='note'),
+    item=>errorDiagnostic(item,evaluation,lesson?.bpm,diagnosticXml),pitchName);
   for(const [markerIndex,item] of evaluatedUnexpected.entries())reviewEntries.push({tick:item.tick,measure:item.measure,message:`Compás ${item.measure} · Pulsación inesperada: ${pitchName(item.pitch)}.`,unexpected:true,markerIndex});
   reviewEntries.sort((a,b)=>a.tick-b.tick||Number(a.unexpected)-Number(b.unexpected));
   showEvaluationMeasureBackgrounds=true;
