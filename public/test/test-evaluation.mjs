@@ -1,0 +1,15 @@
+import {consolidateResults,PT_MATCH} from './js/session/pt_evaluator.js';
+import assert from 'node:assert/strict';
+const item=(m,p,t)=>({match:PT_MATCH.MATCHED,expected:{measure:m,pitch:p,timeOn:t,timeOff:t+200},captured:{pitch:p,timeOn:t,timeOff:t+200},deviation:{pitch:0,timing:0,duration:0}});
+const extra=t=>({match:PT_MATCH.UNEXPECTED,expected:null,captured:{pitch:75,timeOn:t,timeOff:t+100},deviation:null});
+const evalPerf=(items)=>consolidateResults({type:'ConsolidatedPerformance',status:'EVALUABLE',reason:null,alignment:{mode:'SEQUENTIAL'},evaluation:{pitch:true,timing:true,duration:true},expectedCount:items.filter(i=>i.expected).length,capturedCount:items.filter(i=>i.captured).length,items});
+let r=evalPerf([item(1,60,0),item(1,62,300),item(2,64,800),item(2,65,1200)]);
+assert.equal(r.percentages.notesCompliance,100);assert.equal(r.byMeasure.length,2);
+r=evalPerf([item(1,60,0),extra(100),item(1,62,300),item(2,64,800),item(2,65,1200)]);
+assert.equal(r.counts.unexpected,1);assert.equal(r.byMeasure[0].counts.unexpected,1);assert.equal(r.percentages.notesCompliance,75);
+assert.equal(r.byMeasure.reduce((s,v)=>s+v.counts.unexpected,0),r.counts.unexpected);
+r=evalPerf([extra(-100),item(1,60,0),item(2,64,800),extra(850)]);
+assert.equal(r.counts.unexpected,2);assert.equal(r.byMeasure[0].counts.unexpected,1);assert.equal(r.byMeasure[1].counts.unexpected,1);
+r=evalPerf([item(1,60,0),item(1,62,300),item(2,64,15000),item(2,65,15500)]);
+assert.equal(r.percentages.notesCompliance,100);
+console.log('PASS global=acumulación compases, inesperadas asignadas, pausa sin penalizar Notas');

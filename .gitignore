@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100/
+.Trashes/
+.TemporaryItems/
+.fseventsd/
+.DocumentRevisions-V100/
+.VolumeIcon.icns
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.stackdump
+
+# Linux / Unix: trash, editor backups and temporary files
+.Trash-*/
+.nfs*
+*~
+.~lock.*#
+*.swp
+*.swo

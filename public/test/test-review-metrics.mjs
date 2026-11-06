@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {noteErrorKinds,consolidateResults,PT_MATCH} from './js/session/pt_evaluator.js';
+const expected=(duration=1000)=>({measure:1,pitch:60,timeOn:0,timeOff:duration,startTick:0,endTick:480});
+const matched=(on=0,off=1000)=>({match:PT_MATCH.MATCHED,expected:expected(),captured:{pitch:60,timeOn:on,timeOff:off},deviation:{pitch:0,timing:Math.abs(on),duration:Math.abs(off-on-1000)}});
+const evaluation={pitch:true,timing:true,duration:true};
+assert.deepEqual(noteErrorKinds(matched(200,1200),evaluation),[]);
+assert.deepEqual(noteErrorKinds(matched(600,1600),evaluation),['timing']);
+assert.deepEqual(noteErrorKinds(matched(0,400),evaluation),['duration']);
+const summarize=item=>consolidateResults({type:'ConsolidatedPerformance',status:'EVALUABLE',evaluation,alignment:{mode:'SEQUENTIAL'},items:[item]});
+assert.equal(summarize(matched(200,1200)).percentages.timingCompliance,100);
+assert.equal(summarize(matched(0,400)).byMeasure[0].percentages.durationCompliance,0);
+assert.equal(summarize(matched(0,1000)).percentages.durationCompliance,100);
+console.log('PASS métricas = diagnósticos compartidos de nota; sin castigos invisibles');

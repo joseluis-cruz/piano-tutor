@@ -1,0 +1,20 @@
+{
+  "pieces": [
+    {
+      "id": "bach-bwv926",
+      "title": "Preludio BWV 926",
+      "composer": "Johann Sebastian Bach",
+      "period": "Barroco",
+      "musicXmlUrl": "repertoire/pieces/eem4/bach-bwv926.xml",
+      "lessons": []
+    },
+    {
+      "id": "clementi-op36-n4",
+      "title": "Sonatina Op. 36 No. 4",
+      "composer": "Muzio Clementi",
+      "period": "Clasicismo",
+      "musicXmlUrl": "repertoire/pieces/eem4/clementi-op36-n4.xml",
+      "lessons": []
+    }
+  ]
+}

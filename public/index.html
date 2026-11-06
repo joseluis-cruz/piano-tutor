@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Piano Tutor · Beta v0.78</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.7/build/opensheetmusicdisplay.min.js"></script>
+</head>
+<body>
+  <header class="transport-bar">
+    <div class="transport-shell">
+      <div class="transport-main">
+        <div class="transport-primary">
+          <div class="brand">Piano Tutor <span>0.78</span></div>
+          <div class="transport-controls">
+            <label class="active-listening-toggle" title="Escucha activa (A)"><span>Escucha activa</span><input id="active-listening" type="checkbox" role="switch"><span class="active-listening-track" aria-hidden="true"></span></label>
+            <button id="play" disabled title="Iniciar / Pausar / Reanudar (Espacio)">▶ Iniciar</button>
+            <button id="restart" title="Reiniciar pasaje (Home)" disabled title="Volver al inicio del pasaje">≪</button>
+            <button id="previous-measure" title="Compás anterior (Mayús + ←)" disabled title="Inicio del compás actual o compás anterior">&lt;</button>
+            <button id="next-measure" title="Compás siguiente (Mayús + →)" disabled title="Inicio del compás siguiente">&gt;</button>
+          </div>
+          <div class="position-display" aria-label="Compás y tiempo">
+            <div id="position-measure" class="position-measure">—</div>
+            <div class="position-separator">:</div>
+            <div id="position-beat" class="position-beat">—</div>
+          </div>
+          <button id="panic" class="danger panic" title="Detener y restablecer la sesión (Esc)">■ STOP</button>
+          <span id="play-status" class="transport-status">Detenido</span>
+          <button id="active-metronome-mode" class="active-metronome-indicator" type="button" disabled title="Cambiar metrónomo (M)">♩ OFF</button>
+        </div>
+      </div>
+      <div class="document-row">
+        <div class="document-main">
+          <label class="file-button">Cargar MusicXML<input id="musicxml-file" type="file" accept=".xml,.musicxml,application/xml,text/xml"></label>
+          <button id="download-musicxml" type="button" class="url-button" disabled title="Descargar el MusicXML modificado">Descargar cambios</button>
+          <button id="load-url" type="button" class="url-button">URL</button>
+          <div id="score-metadata" class="score-metadata" title="Ningún archivo cargado">Ningún archivo cargado</div>
+          <label class="follow-score-control" title="Mantener visible la posición actual de la partitura"><input id="follow-score" type="checkbox" checked> Seguir partitura</label>
+        </div>
+                <nav class="aside-tabs" aria-label="Panel lateral">
+          <button type="button" data-aside-view="repertoire" class="selected">Repertorio</button>
+          <button type="button" data-aside-view="lesson">Lección</button>
+          <button type="button" data-aside-view="results">Resultados</button>
+          <button type="button" data-aside-view="hidden">Ocultar</button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div id="edit-feedback" class="edit-feedback" role="status" aria-live="polite" hidden></div>
+  <main class="workspace">
+    <section class="score-card"><div id="score-viewport"><div id="score">Carga un MusicXML para visualizarlo.</div></div></section>
+
+    <aside id="repertoire-aside" class="settings-aside aside-view" aria-label="Repertorio">
+      <section class="card repertoire-card">
+        <div class="lesson-title">Repertorio</div>
+        <div id="repertoire-status" class="repertoire-status">Cargando repertorio…</div>
+        <div id="repertoire-pieces" class="repertoire-pieces" aria-label="Piezas disponibles">
+          <button id="repertoire-piece-trigger" class="repertoire-piece-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" disabled>
+            <span><span id="repertoire-current-title" class="repertoire-piece-title">Selecciona una pieza</span><span id="repertoire-current-meta" class="repertoire-piece-meta"></span></span><span class="repertoire-chevron">▾</span>
+          </button>
+          <div id="repertoire-piece-menu" class="repertoire-piece-menu" role="listbox" hidden></div>
+        </div>
+        <div class="repertoire-lessons-heading">Lecciones</div>
+        <div id="repertoire-lessons" class="repertoire-lessons muted">Selecciona una pieza.</div>
+      </section>
+    </aside>
+
+    <aside id="lesson-aside" class="settings-aside aside-view" aria-label="Lección" hidden>
+      <section class="card lesson-card" id="lesson-panel">
+        <div class="lesson-title">Configuración de la lección</div>
+        <fieldset id="lesson-controls" disabled>
+          <div class="lesson-layout">
+            <div class="lesson-settings">
+              <div class="lesson-primary">
+                <label id="movement-label" class="movement-label"><select id="movement" aria-label="Movimiento"></select></label>
+                <label>Compás inicial<div class="input-with-button"><input id="from-measure" type="number" min="1" step="1"><button id="set-from-current" class="measure-boundary-button" type="button" title="Fijar el compás actual como inicio" aria-label="Fijar compás inicial en el compás actual">|&lt;</button></div></label>
+                <label>Compás final<div class="input-with-button"><input id="to-measure" type="number" min="1" step="1"><button id="set-to-current" class="measure-boundary-button" type="button" title="Fijar el compás actual como final" aria-label="Fijar compás final en el compás actual">&gt;|</button></div></label>
+                <button id="reset-measure-range" class="measure-reset" type="button" title="Restablecer intervalo" aria-label="Restablecer intervalo">↺</button>
+                <label class="tempo-label">Tempo (BPM)<div class="tempo-controls"><button type="button" data-bpm-delta="-10">−10</button><button type="button" data-bpm-delta="-5">−5</button><button type="button" data-bpm-delta="-1">−1</button><input id="bpm" type="number" min="1" step="1"><button type="button" data-bpm-delta="1">+1</button><button type="button" data-bpm-delta="5">+5</button><button type="button" data-bpm-delta="10">+10</button></div></label>
+              </div>
+              <div class="session-grid">
+                <div class="session-heading session-mode-title">Modo de sesión</div>
+                <div class="session-mode-row">
+                  <div class="session-mode-buttons" role="group" aria-label="Modo de sesión">
+                    <button type="button" data-session-mode="listen" class="selected">Sólo escuchar</button>
+                    <button type="button" data-session-mode="practice">Escuchar y practicar</button>
+                    <button type="button" data-session-mode="evaluate">Grabar y evaluar</button>
+                  </div>
+                  <button id="loop" class="loop-button" type="button" aria-pressed="false" title="Repetir la sesión en bucle">↻</button>
+                </div>
+                <input id="session-mode" type="hidden" value="listen">
+                <div class="session-option-groups">
+                  <div class="session-options compact-options">
+                    <label class="check-cell"><input id="metronome" type="checkbox"> Usar/evaluar metrónomo</label>
+                    <label class="check-cell"><input id="intro" type="checkbox"> Incluir ticks de introducción</label>
+                  </div>
+                  <div class="session-options compact-options">
+                    <label class="check-cell"><input id="evaluate-duration" type="checkbox" checked> Evaluar duraciones</label>
+                    <label class="check-cell"><input id="evaluate-dynamics" type="checkbox" checked> Evaluar dinámicas</label>
+                  </div>
+                </div>
+                <div class="hands-grid">
+                  <div></div><div class="session-heading">Reproducir</div><div class="session-heading">Grabar</div><div class="session-heading">Acompañar</div>
+                  <div>Mano derecha</div><label class="check-only"><input id="play-right" type="checkbox" checked></label><label class="check-only"><input id="record-right" type="checkbox"></label><label class="check-only"><input id="accompany-right" type="checkbox" disabled></label>
+                  <div>Mano izquierda</div><label class="check-only"><input id="play-left" type="checkbox" checked></label><label class="check-only"><input id="record-left" type="checkbox"></label><label class="check-only"><input id="accompany-left" type="checkbox" disabled></label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      </section>
+
+      <details class="card" open><summary>Dispositivos MIDI</summary>
+        <div class="panel midi-panel">
+          <div class="midi-device-grid">
+            <label for="midi-in">IN</label><select id="midi-in"><option>Inicializando…</option></select>
+            <button id="refresh-midi" class="midi-refresh" type="button" title="Actualizar dispositivos MIDI">↻</button>
+            <label for="midi-out">OUT</label><select id="midi-out"><option>Inicializando…</option></select>
+          </div>
+          <div class="midi-thru-row">
+            <label title="MIDI THRU: para teclados de entrada que no producen sonido por sí mismos"><input id="midi-thru" type="checkbox" disabled> MIDI THRU</label>
+            <span id="midi-thru-warning" class="midi-warning" role="img" aria-label="Advertencia" title="MIDI THRU mantendrá activo el sistema MIDI para que puedas escuchar el teclado mientras practicas. Un uso prolongado puede aumentar el consumo de recursos del equipo. El sistema MIDI se apagará automáticamente tras 60 segundos de inactividad.">⚠</span>
+          </div>
+        </div>
+      </details>
+      <details class="card developer-panel" hidden><summary>Desarrollador</summary><div class="developer-content">
+        <label>Lección</label><pre id="lesson-output">{}</pre>
+        <label>JSON musical</label><pre id="json-output">{}</pre>
+        <label>ExpectedPerformance</label><pre id="expected-output">{}</pre>
+      </div></details>
+    </aside>
+
+    <aside id="results-aside" class="settings-aside aside-view" aria-label="Resultados" hidden>
+      <section class="card results-card">
+        <div class="lesson-title">Resultados globales</div>
+        <div id="results-empty" class="results-empty">Completa una evaluación para ver los resultados.</div>
+        <div id="results-content" hidden>
+          <div id="results-bars" class="results-bars"></div>
+          <div class="results-measures-title">Resultados por compás</div>
+          <div class="results-grid-wrap"><table class="results-grid"><thead><tr id="results-measures-head"><th>Compás</th></tr></thead><tbody id="results-measures"></tbody></table></div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="url-dialog" class="url-dialog">
+    <form id="url-form" method="dialog">
+      <div class="url-dialog-title">Cargar MusicXML desde URL</div>
+      <label for="musicxml-url">URL del archivo MusicXML</label>
+      <input id="musicxml-url" type="url" inputmode="url" placeholder="https://…/partitura.musicxml" required>
+      <div class="url-dialog-actions">
+        <button id="url-cancel" type="button">Cancelar</button>
+        <button id="url-submit" type="submit">Cargar</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

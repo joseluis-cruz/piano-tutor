@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Piano Tutor MIDI</title></head><body>
+<script>
+'use strict';
+let access=null,input=null,output=null,thru=false;
+const send=(type,data={})=>parent.postMessage({source:'piano-tutor-midi',type,...data},location.origin);
+const portData=p=>({id:p.id,name:p.name??'',manufacturer:p.manufacturer??'',type:p.type,state:p.state});
+async function ensureAccess(){if(!access)access=await navigator.requestMIDIAccess({sysex:false});return access;}
+async function devices(){const a=await ensureAccess();return {inputs:[...a.inputs.values()].map(portData),outputs:[...a.outputs.values()].map(portData)};}
+function onMidiMessage(event){const data=[...event.data];if(thru&&output?.connection==='open')output.send(data);send('MIDI_MESSAGE',{data,receivedAt:performance.now()});}
+async function closePorts(){if(input)input.onmidimessage=null;await Promise.allSettled([input?.connection==='open'?input.close():null,output?.connection==='open'?output.close():null].filter(Boolean));input=null;output=null;}
+async function openPorts(inputId,outputId){const a=await ensureAccess();await closePorts();input=inputId?a.inputs.get(inputId)??null:null;output=outputId?a.outputs.get(outputId)??null:null;if(input){await input.open();input.onmidimessage=onMidiMessage;}if(output)await output.open();return {input:input?portData(input):null,output:output?portData(output):null};}
+function midiSend(data){if(output?.connection==='open')output.send(data);}
+addEventListener('message',async e=>{if(e.origin!==location.origin||e.source!==parent)return;const m=e.data;if(!m||m.source!=='piano-tutor-parent')return;try{
+ let result=null;
+ if(m.command==='DISCOVER')result=await devices();
+ else if(m.command==='OPEN')result=await openPorts(m.inputId,m.outputId);
+ else if(m.command==='SEND')midiSend(m.data);
+ else if(m.command==='THRU'){thru=Boolean(m.enabled);result={enabled:thru};}
+ else if(m.command==='CLOSE'){thru=false;await closePorts();result={closed:true};}
+ if(m.requestId)send('RESPONSE',{requestId:m.requestId,result});
+}catch(error){if(m.requestId)send('RESPONSE',{requestId:m.requestId,error:`${error.name}: ${error.message}`});}});
+send('READY');
+</script></body></html>
