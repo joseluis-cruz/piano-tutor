@@ -2,6 +2,7 @@ import { MusicXMLParser } from './music/MusicXMLParser.js';
 import { createMeasureRecognizer } from './session/pt_recognizer.js';
 import { createSession, PT_HAND } from './session/pt_session.js';
 import { PT_EVENT } from './core/pt_events.js';
+import { setMetronomeDrumKit } from './core/pt_metronome.js';
 import { consolidatePerformance, consolidateResults, noteErrorKinds } from './session/pt_evaluator.js';
 import { initMidi, refreshMidiDevices, getMidiInputs, getMidiOutputs, setInputDevice, setOutputDevice, openSelectedMidiPorts, stopAndCloseMidi, stopMidiSession, setMidiThru, isMidiContextActive, setMidiAutoStopCallback, releaseMidiIfIdle, play, pause, resume, seek, stop, startRecording, stopRecording, pauseRecording, resumeRecording, getCapturedPerformance, isRecording, PT_PLAYBACK_STATE, setMidiInputObserver, sendLiveMetronomeNote } from './midi/pt_midi.js';
 
@@ -12,7 +13,7 @@ const sessionModeInput=$('#session-mode'), loopInput=$('#loop'), playLeftInput=$
 const setFromCurrentButton=$('#set-from-current'), setToCurrentButton=$('#set-to-current'), resetMeasureRangeButton=$('#reset-measure-range');
 const playButton=$('#play'), restartButton=$('#restart'), previousMeasureButton=$('#previous-measure'), nextMeasureButton=$('#next-measure'), panicButton=$('#panic'), playStatus=$('#play-status'), followScoreInput=$('#follow-score'), workspace=$('.workspace'), positionMeasure=$('#position-measure'), positionBeat=$('#position-beat'), expectedOutput=$('#expected-output'), midiIn=$('#midi-in'), midiOut=$('#midi-out'), refreshMidiButton=$('#refresh-midi'), midiThruInput=$('#midi-thru');
 const asideButtons=[...document.querySelectorAll('[data-aside-view]')];
-const asideViews={repertoire:$('#repertoire-aside'),lesson:$('#lesson-aside'),results:$('#results-aside')};
+const asideViews={repertoire:$('#repertoire-aside'),lesson:$('#lesson-aside'),results:$('#results-aside'),settings:$('#settings-aside')};
 const repertoireStatus=$('#repertoire-status'), repertoirePieces=$('#repertoire-pieces'), repertoireLessons=$('#repertoire-lessons'), repertoirePieceTrigger=$('#repertoire-piece-trigger'), repertoirePieceMenu=$('#repertoire-piece-menu'), repertoireCurrentTitle=$('#repertoire-current-title'), repertoireCurrentMeta=$('#repertoire-current-meta');
 const editFeedback=$('#edit-feedback'), activeListeningSwitch=$('#active-listening'), activeMetronomeButton=$('#active-metronome-mode');
 const resultsEmpty=$('#results-empty'), resultsContent=$('#results-content'), resultsBars=$('#results-bars'), resultsMeasures=$('#results-measures'), resultsMeasuresHead=$('#results-measures-head');
@@ -153,6 +154,15 @@ if(developerPanel) developerPanel.hidden=!debugEnabled;
 
 const STORAGE_MIDI_IN='pianoTutor.midiIn';
 const STORAGE_MIDI_OUT='pianoTutor.midiOut';
+const STORAGE_DRUM_KIT_METRONOME='pianoTutor.useDrumKitMetronome';
+const drumKitMetronomeInput=$('#use-drum-kit-metronome');
+try{drumKitMetronomeInput.checked=localStorage.getItem(STORAGE_DRUM_KIT_METRONOME)==='true';}catch{}
+setMetronomeDrumKit(drumKitMetronomeInput.checked);
+drumKitMetronomeInput.addEventListener('change',()=>{
+  setMetronomeDrumKit(drumKitMetronomeInput.checked);
+  try{localStorage.setItem(STORAGE_DRUM_KIT_METRONOME,String(drumKitMetronomeInput.checked));}
+  catch(error){console.warn('[STORAGE] No se pudo guardar la preferencia de metrónomo:',error);}
+});
 const STORAGE_LESSON='pianoTutor.lesson.v1';
 const STORAGE_ACTIVE_METRONOME_MODE='pt_metronome_mode';
 const RECENT_SCORE_DB='pianoTutor';

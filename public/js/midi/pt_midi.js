@@ -1,5 +1,6 @@
 /** Piano Tutor - backend Web MIDI aislado en un iframe descartable. */
 import { PT_EVENT } from '../core/pt_events.js';
+import { metronomeVoice } from '../core/pt_metronome.js';
 export { PT_EVENT } from '../core/pt_events.js';
 export const PT_MIDI_EVENT = PT_EVENT;
 export const PT_PLAYBACK_STATE = Object.freeze({ STOPPED:'STOPPED', PLAYING:'PLAYING', PAUSED:'PAUSED' });
@@ -17,19 +18,11 @@ let knownInputs=[], knownOutputs=[], selectedInputId='', selectedOutputId='';
 let midiThru=false, thruTimer=null, autoStopCallback=null;
 let midiInputObserver=null;
 export function setMidiInputObserver(callback){midiInputObserver=typeof callback==='function'?callback:null;}
-// Metrónomo de ESCUCHA ACTIVA: notas melódicas por canal MIDI 1 (índice interno 0).
-// El metrónomo ordinario conserva su canal MIDI 10 de percusión (índice 9).
-const ACTIVE_LISTENING_METRONOME_CHANNEL = 0;
 export function sendLiveMetronomeNote(pitch, velocity=80, durationMs=90){
   if(!frame)return false;
-  const channel=ACTIVE_LISTENING_METRONOME_CHANNEL;
-  sendNoteOn(channel,pitch,velocity);
-  console.log('[ACTIVE] MIDI OUT NOTE_ON', {channel:channel+1,pitch,velocity}); //debug.midi.active-listening
-  setTimeout(()=>{
-    if(!frame)return;
-    sendNoteOff(channel,pitch);
-    console.log('[ACTIVE] MIDI OUT NOTE_OFF', {channel:channel+1,pitch,durationMs}); //debug.midi.active-listening
-  },durationMs);
+  const voice=metronomeVoice(pitch);
+  executeNote({...voice,velocity,timeOn:0,timeOff:durationMs});
+  console.log('[ACTIVE] MIDI OUT NOTE_ON', {channel:voice.channel+1,pitch:voice.pitch,velocity}); //debug.midi.active-listening
   return true;
 }
 let queueTimer=null; const activeTimeouts=new Set(), activeNotes=new Map();
@@ -179,7 +172,7 @@ function scheduleNoteOff(e){
 }
 function executeNote(e){sendNoteOn(e.channel??0,e.pitch,e.velocity??80);scheduleNoteOff(e);}
 function executeMordent(e){const c=e.channel??0,d=Math.max(0,e.ornamentNoteDuration??0),total=Math.max(0,e.timeOff-e.timeOn),v=e.velocity??80;sendNoteOn(c,e.pitch,v);later(()=>{sendNoteOff(c,e.pitch);sendNoteOn(c,e.alterPitch,v);},Math.min(d,total));later(()=>{sendNoteOff(c,e.alterPitch);sendNoteOn(c,e.pitch,v);},Math.min(2*d,total));later(()=>sendNoteOff(c,e.pitch),total);}
-function executeEvent(e){if(e.type===PT_EVENT.NOTE||e.type===PT_EVENT.METRONOME)executeNote(e);else if(e.type===PT_EVENT.MORDENT)executeMordent(e);else if(e.type===PT_EVENT.CONTROL_CHANGE)sendRaw([0xB0|((e.channel??0)&15),e.controller&127,e.value&127]);}
+function executeEvent(e){if(e.type===PT_EVENT.METRONOME)executeNote({...e,...metronomeVoice()});else if(e.type===PT_EVENT.NOTE)executeNote(e);else if(e.type===PT_EVENT.MORDENT)executeMordent(e);else if(e.type===PT_EVENT.CONTROL_CHANGE)sendRaw([0xB0|((e.channel??0)&15),e.controller&127,e.value&127]);}
 function clearQueueTimer(){if(queueTimer!==null){clearTimeout(queueTimer);queueTimer=null;}}
 function finishPlayback(token){if(!playback||token!==playbackToken)return;clearQueueTimer();playbackState=PT_PLAYBACK_STATE.STOPPED;const onEnd=playback.callbacks.onEnd;playback=null;scheduleThruTimer();onEnd?.();}
 function pump(token){if(!playback||playbackState!==PT_PLAYBACK_STATE.PLAYING||token!==playbackToken)return;const elapsed=performance.now()-playback.startedAt;playback.callbacks.onClock?.(elapsed);while(playback.index<playback.events.length&&playback.events[playback.index].timeOn<=elapsed){const e=playback.events[playback.index++];playback.callbacks.onEvent?.(e);executeEvent(e);}if(playback.index<playback.events.length)queueTimer=setTimeout(()=>pump(token),5);else{const lastOff=Math.max(0,...playback.events.map(e=>e.timeOff??e.timeOn));queueTimer=setTimeout(()=>finishPlayback(token),Math.max(0,lastOff-elapsed)+5);}}

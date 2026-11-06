@@ -42,6 +42,7 @@
           <button type="button" data-aside-view="repertoire" class="selected">Repertorio</button>
           <button type="button" data-aside-view="lesson">Lección</button>
           <button type="button" data-aside-view="results">Resultados</button>
+          <button type="button" data-aside-view="settings">Configuración</button>
           <button type="button" data-aside-view="hidden">Ocultar</button>
         </nav>
       </div>
@@ -112,19 +113,6 @@
         </fieldset>
       </section>
 
-      <details class="card" open><summary>Dispositivos MIDI</summary>
-        <div class="panel midi-panel">
-          <div class="midi-device-grid">
-            <label for="midi-in">IN</label><select id="midi-in"><option>Inicializando…</option></select>
-            <button id="refresh-midi" class="midi-refresh" type="button" title="Actualizar dispositivos MIDI">↻</button>
-            <label for="midi-out">OUT</label><select id="midi-out"><option>Inicializando…</option></select>
-          </div>
-          <div class="midi-thru-row">
-            <label title="MIDI THRU: para teclados de entrada que no producen sonido por sí mismos"><input id="midi-thru" type="checkbox" disabled> MIDI THRU</label>
-            <span id="midi-thru-warning" class="midi-warning" role="img" aria-label="Advertencia" title="MIDI THRU mantendrá activo el sistema MIDI para que puedas escuchar el teclado mientras practicas. Un uso prolongado puede aumentar el consumo de recursos del equipo. El sistema MIDI se apagará automáticamente tras 60 segundos de inactividad.">⚠</span>
-          </div>
-        </div>
-      </details>
       <details class="card developer-panel" hidden><summary>Desarrollador</summary><div class="developer-content">
         <label>Lección</label><pre id="lesson-output">{}</pre>
         <label>JSON musical</label><pre id="json-output">{}</pre>
@@ -141,6 +129,25 @@
           <div class="results-measures-title">Resultados por compás</div>
           <div class="results-grid-wrap"><table class="results-grid"><thead><tr id="results-measures-head"><th>Compás</th></tr></thead><tbody id="results-measures"></tbody></table></div>
         </div>
+      </section>
+    </aside>
+
+    <aside id="settings-aside" class="settings-aside aside-view" aria-label="Configuración" hidden>
+      <details class="card" open><summary>Dispositivos MIDI</summary>
+        <div class="panel midi-panel">
+          <div class="midi-device-grid">
+            <label for="midi-in">IN</label><select id="midi-in"><option>Inicializando…</option></select>
+            <button id="refresh-midi" class="midi-refresh" type="button" title="Actualizar dispositivos MIDI">↻</button>
+            <label for="midi-out">OUT</label><select id="midi-out"><option>Inicializando…</option></select>
+          </div>
+          <div class="midi-thru-row">
+            <label title="MIDI THRU: para teclados de entrada que no producen sonido por sí mismos"><input id="midi-thru" type="checkbox" disabled> MIDI THRU</label>
+            <span id="midi-thru-warning" class="midi-warning" role="img" aria-label="Advertencia" title="MIDI THRU mantendrá activo el sistema MIDI para que puedas escuchar el teclado mientras practicas. Un uso prolongado puede aumentar el consumo de recursos del equipo. El sistema MIDI se apagará automáticamente tras 60 segundos de inactividad.">⚠</span>
+          </div>
+        </div>
+      </details>
+      <section class="card">
+        <label class="check-cell"><input id="use-drum-kit-metronome" type="checkbox"> Usar metrónomo de drum kit</label>
       </section>
     </aside>
   </main>

@@ -65,7 +65,7 @@
 :root{--aside-width:410px}
 .transport-main{display:grid;grid-template-columns:minmax(0,1fr) var(--aside-width);gap:8px;align-items:center}
 .transport-primary{min-width:0;display:flex;align-items:center;gap:10px}
-.aside-tabs{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.aside-tabs{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr 1.4fr .8fr;gap:5px}
 .aside-tabs button{min-width:0;padding:8px 4px;border:1px solid #69737e;border-radius:4px;background:#30373f;color:#cfd6dc;font-size:.78rem;font-weight:700;white-space:nowrap}
 .aside-tabs button.selected{background:#1677d2;border-color:#0f65b6;color:#fff}
 .document-row{display:grid;grid-template-columns:minmax(0,1fr) var(--aside-width);gap:8px}
