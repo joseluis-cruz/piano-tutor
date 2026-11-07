@@ -1555,7 +1555,7 @@ function updateActiveMetronomeIndicator(){
     ?Math.round(60000/activeListeningTempo.periodMs)
     :(activeMeasuredBpm||Number(bpmInput.value)||80);
   activeMetronomeButton.innerHTML=metronomeSvg+titles[activeMetronomeMode]+' · '+displayBpm+' BPM';
-  activeMetronomeButton.disabled=!activeListening;
+  activeMetronomeButton.disabled=false;
   activeMetronomeButton.title='Metrónomo: '+titles[activeMetronomeMode]+' · Cambiar modo (M)';
   activeMetronomeButton.setAttribute('aria-label',activeMetronomeButton.title);
 }
@@ -2150,11 +2150,12 @@ function activeRecognitionProgress(result){
   }
 }
 function toggleActiveMetronome(){
-  if(!activeListening)return;
   const modes=['off','flexible','strict'];
   const previousMode=activeMetronomeMode;
   activeMetronomeMode=modes[(modes.indexOf(activeMetronomeMode)+1)%3];
   persistMetronomeMode();
+  updateActiveMetronomeIndicator();
+  if(!activeListening)return;
   // M sólo modifica la preferencia. No fabrica un BPM ni arranca el reloj.
   // Los ticks en curso obedecen al nuevo modo; si la interpretación ya
   // estableció tempo/fase, esa información se conserva sin reiniciarla.
@@ -2181,11 +2182,11 @@ activeListeningSwitch.addEventListener('change',async()=>{
 window.addEventListener('keydown',async event=>{
   if(isEditableTarget(event.target))return;
   const plain=!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey;
+  if(plain&&event.key.toLowerCase()==='m'){event.preventDefault();toggleActiveMetronome();return;}
   if(plain&&event.code==='Space'){event.preventDefault();leaveEditMode();if(activeListening){toggleActiveListeningPause();return;}playButton.click();return;}
   if(plain&&event.key==='Escape'){event.preventDefault();leaveEditMode();if(activeListening){await deactivateActiveListening();return;}await keyboardStop();return;}
   if(plain&&event.key.toLowerCase()==='a'){event.preventDefault();leaveEditMode();if(!activeListening)await activateActiveListening();return;}
   if(activeListening){
-    if(plain&&event.key.toLowerCase()==='m'){event.preventDefault();toggleActiveMetronome();return;}
     if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&canRewindActiveMeasure()&&
        (activeMelodyStarted||activeFragmentConfirmed||activeRewindReadyMeasure!==null||activeCapturedEvents.some(e=>e.type==='noteOn'))){
       event.preventDefault();if(!event.repeat)rewindActiveMeasure(event.key==='ArrowLeft'?-1:1);return;
@@ -2210,7 +2211,8 @@ window.addEventListener('keydown',async event=>{
     event.preventDefault();leaveEditMode();setCurrentMeasureShortcut(event.key.toLowerCase()==='i'?fromInput:toInput);return;
   }
   if(plain&&editMode&&!reviewMode&&!showEvaluationMeasureBackgrounds&&/^[1-6]$/.test(event.key)){event.preventDefault();await editSelectedFingering(Number(event.key));return;}
-  if(plain&&editMode&&!reviewMode&&!showEvaluationMeasureBackgrounds&&event.key.toLowerCase()==='m'){event.preventDefault();await cycleSelectedMordent();return;}
+  if(event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&event.key.toLowerCase()==='m'&&
+     editMode&&!reviewMode&&!showEvaluationMeasureBackgrounds){event.preventDefault();await cycleSelectedMordent();return;}
   if(editMode)leaveEditMode();
 });
 // Cualquier interacción de interfaz distinta de las flechas simples abandona
