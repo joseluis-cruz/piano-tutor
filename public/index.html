@@ -113,11 +113,6 @@
         </fieldset>
       </section>
 
-      <details class="card developer-panel" hidden><summary>Desarrollador</summary><div class="developer-content">
-        <label>Lección</label><pre id="lesson-output">{}</pre>
-        <label>JSON musical</label><pre id="json-output">{}</pre>
-        <label>ExpectedPerformance</label><pre id="expected-output">{}</pre>
-      </div></details>
     </aside>
 
     <aside id="results-aside" class="settings-aside aside-view" aria-label="Resultados" hidden>
@@ -148,6 +143,16 @@
       </details>
       <section class="card">
         <label class="check-cell"><input id="use-drum-kit-metronome" type="checkbox"> Usar metrónomo de drum kit</label>
+      </section>
+    </aside>
+    <aside id="developer-aside" class="settings-aside aside-view" aria-label="Depurar" hidden>
+      <section class="card developer-panel">
+        <div class="lesson-title">Desarrollador</div>
+        <div class="developer-content">
+          <label>Lección</label><pre id="lesson-output">{}</pre>
+          <label>JSON musical</label><pre id="json-output">{}</pre>
+          <label>ExpectedPerformance</label><pre id="expected-output">{}</pre>
+        </div>
       </section>
     </aside>
   </main>

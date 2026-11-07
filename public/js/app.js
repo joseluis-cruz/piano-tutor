@@ -1,4 +1,5 @@
 import { MusicXMLParser } from './music/MusicXMLParser.js';
+import { debugEnabled, debugConsole as console } from './core/pt_debug.js';
 import { createMeasureRecognizer } from './session/pt_recognizer.js';
 import { buildReviewEntries } from './session/pt_review.js';
 import { createSession, PT_HAND } from './session/pt_session.js';
@@ -14,7 +15,7 @@ const sessionModeInput=$('#session-mode'), loopInput=$('#loop'), playLeftInput=$
 const setFromCurrentButton=$('#set-from-current'), setToCurrentButton=$('#set-to-current'), resetMeasureRangeButton=$('#reset-measure-range');
 const playButton=$('#play'), restartButton=$('#restart'), previousMeasureButton=$('#previous-measure'), nextMeasureButton=$('#next-measure'), panicButton=$('#panic'), playStatus=$('#play-status'), followScoreInput=$('#follow-score'), workspace=$('.workspace'), positionMeasure=$('#position-measure'), positionBeat=$('#position-beat'), expectedOutput=$('#expected-output'), midiIn=$('#midi-in'), midiOut=$('#midi-out'), refreshMidiButton=$('#refresh-midi'), midiThruInput=$('#midi-thru');
 const asideButtons=[...document.querySelectorAll('[data-aside-view]')];
-const asideViews={repertoire:$('#repertoire-aside'),lesson:$('#lesson-aside'),results:$('#results-aside'),settings:$('#settings-aside')};
+const asideViews={repertoire:$('#repertoire-aside'),lesson:$('#lesson-aside'),results:$('#results-aside'),settings:$('#settings-aside'),developer:$('#developer-aside')};
 const repertoireStatus=$('#repertoire-status'), repertoirePieces=$('#repertoire-pieces'), repertoireLessons=$('#repertoire-lessons'), repertoirePieceTrigger=$('#repertoire-piece-trigger'), repertoirePieceMenu=$('#repertoire-piece-menu'), repertoireCurrentTitle=$('#repertoire-current-title'), repertoireCurrentMeta=$('#repertoire-current-meta');
 const editFeedback=$('#edit-feedback'), activeListeningSwitch=$('#active-listening'), activeMetronomeButton=$('#active-metronome-mode');
 const resultsEmpty=$('#results-empty'), resultsContent=$('#results-content'), resultsBars=$('#results-bars'), resultsMeasures=$('#results-measures'), resultsMeasuresHead=$('#results-measures-head');
@@ -156,9 +157,7 @@ const PT_TIMING_ERROR_FRACTION=0.50;
 const PT_DURATION_TOO_SHORT_RATIO=0.55;
 const PT_DURATION_TOO_LONG_RATIO=1.80;
 
-const debugEnabled=new URLSearchParams(window.location.search).get('debug')==='true';
-const developerPanel=$('.developer-panel');
-if(developerPanel) developerPanel.hidden=!debugEnabled;
+configureDeveloperPanel();
 
 const STORAGE_MIDI_IN='pianoTutor.midiIn';
 const STORAGE_MIDI_OUT='pianoTutor.midiOut';
@@ -322,8 +321,14 @@ function refreshScoreLayout(){
     }catch(error){console.error('[OSMD] No se pudo reajustar la partitura:',error);}
   }));
 }
+function configureDeveloperPanel(){
+  const button=asideButtons.find(button=>['hidden','developer'].includes(button.dataset.asideView));
+  if(!button)return;
+  button.dataset.asideView=debugEnabled?'developer':'hidden';
+  button.textContent=debugEnabled?'Depurar':'Ocultar';
+}
 function setAsideView(view){
-  const normalized=view in asideViews?view:'hidden';
+  const normalized=view==='developer'&&!debugEnabled?'hidden':view in asideViews?view:'hidden';
   const wasClosed=workspace.classList.contains('settings-closed');
   const willClose=normalized==='hidden';
   workspace.classList.toggle('settings-closed',willClose);

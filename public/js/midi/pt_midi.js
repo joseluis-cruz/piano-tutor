@@ -1,5 +1,6 @@
 /** Piano Tutor - backend Web MIDI aislado en un iframe descartable. */
 import { PT_EVENT } from '../core/pt_events.js';
+import { debugConsole as console } from '../core/pt_debug.js';
 import { metronomeVoice } from '../core/pt_metronome.js';
 export { PT_EVENT } from '../core/pt_events.js';
 export const PT_MIDI_EVENT = PT_EVENT;
