@@ -31,6 +31,7 @@ let conceptualHighlightObserver=null;
 let conceptualHighlightFrame=0;
 let conceptualHighlightSvg=null;
 let evaluatedMeasures=new Map();
+const evaluatedStaffs=new Set();
 let evaluatedNotes=new Map();
 let evaluatedMessages=new Map();
 let evaluatedUnexpected=[];
@@ -38,6 +39,7 @@ let reviewMode=false,reviewEntries=[],reviewIndex=-1,reviewMessage=null;
 let activeSessionMetronomeMode='off';
 let activeLastMusicalAttackTime=null,activeHeldKeys=new Set(),activeAutoStopping=false;
 let showEvaluationMeasureBackgrounds=false;
+let evaluationRenderPromise=Promise.resolve();
 // ESCUCHA ACTIVA: reloj independiente de las sesiones y sin captura MIDI.
 const ACTIVE_TAP_MIN_PITCH=96; // C7 (MIDI)
 const ACTIVE_TAP_MAX_DURATION_MS=200;
@@ -147,6 +149,8 @@ const OSMD_CURSOR_EDIT_COLOR='#f2c500';
 const PT_OUTSIDE_LESSON_COLOR='#808080';
 const PT_OUTSIDE_LESSON_ALPHA=0.17;
 const PT_EVALUATION_MEASURE_ALPHA=0.20;
+const PT_UNEVALUATED_STAFF_COLOR='#d9dde2';
+const PT_UNEVALUATED_STAFF_ALPHA=0.20;
 const PT_ERROR_COLOR=Object.freeze({omitted:'#bb46f6',pitch:'#ff2525',timing:'#168cff',duration:'#1745a8'});
 const PT_TIMING_ERROR_FRACTION=0.50;
 const PT_DURATION_TOO_SHORT_RATIO=0.55;
@@ -587,7 +591,7 @@ async function persistEditedSource(){
 async function rerenderAfterNoteEdit(identity){
   const viewport=$('#score-viewport');
   const oldScrollTop=viewport?.scrollTop??0, oldScrollLeft=viewport?.scrollLeft??0;
-  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;showEvaluationMeasureBackgrounds=false;refreshEditFeedback();
+  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedStaffs.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;showEvaluationMeasureBackgrounds=false;refreshEditFeedback();
   xmlText=movementXml(sourceXmlText,movements[currentMovementIndex]);
   buildCanonical(); currentSession=null; lessonDirty=true;
   await renderScore(xmlText);
@@ -888,7 +892,10 @@ function errorDiagnostic(item,evaluation,bpm,xmlDocument=null){
   return errors;
 }
 function updateEvaluationPresentation(consolidated,results){
-  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;reviewIndex=-1;reviewMessage=null;
+  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedStaffs.clear();evaluatedUnexpected=[];reviewEntries=[];reviewMode=false;reviewIndex=-1;reviewMessage=null;
+  for(const item of consolidated.items??[]){
+    if(Number.isInteger(item.expected?.channel))evaluatedStaffs.add(item.expected.channel+1);
+  }
   const evaluation=consolidated.evaluation??{};
   const diagnosticXml=new DOMParser().parseFromString(xmlText,'application/xml');
   const byMeasure=new Map((results.byMeasure??[]).map(row=>[row.measure,row]));
@@ -1033,30 +1040,44 @@ function renderMeasureHighlights(){
       ? (measure===activeWaitingMeasure?ACTIVE_WAITING_COLOR:(activeInitialVisitedMeasures.has(measure)?'#ffffff':(isOutside?PT_OUTSIDE_LESSON_COLOR:'#ffffff')))
       : (isOutside?PT_OUTSIDE_LESSON_COLOR:(showEvaluationMeasureBackgrounds?evaluatedMeasures.get(measure):null));
     if(!color)continue;
-    const graphical=Array.isArray(rows[mi])?rows[mi].filter(Boolean):[];
+    const graphical=Array.isArray(rows[mi])?rows[mi]:[];
     const boxes=[];
-    for(const m of graphical){
+    for(const [index,m] of graphical.entries()){
+      if(!m)continue;
+      const staff=index+1;
       const stave=m.stave??m.Stave;
       const x=stave?.getX?.(),y=stave?.getY?.(),w=stave?.getWidth?.(),bottom=stave?.getBottomLineY?.();
-      if([x,y,w,bottom].every(Number.isFinite)&&w>0&&bottom>y)boxes.push({x,y,right:x+w,bottom});
-    }
-    if(!boxes.length){
-      const factor=10*(osmd.Zoom??osmd.zoom??1);
-      for(const m of graphical){
-        const bb=m.PositionAndShape,pos=bb?.AbsolutePosition,w=bb?.Size?.width;
-        if(pos&&[pos.x,pos.y,w].every(Number.isFinite)&&w>0){
-          boxes.push({x:pos.x*factor,y:pos.y*factor,right:(pos.x+w)*factor,bottom:(pos.y+(m.ParentStaffLine?.StaffHeight??4))*factor});
+      if([x,y,w,bottom].every(Number.isFinite)&&w>0&&bottom>y){
+        boxes.push({x,y,right:x+w,bottom,staff});
+      }else{
+        const factor=10*(osmd.Zoom??osmd.zoom??1);
+        const bb=m.PositionAndShape,pos=bb?.AbsolutePosition,width=bb?.Size?.width;
+        if(pos&&[pos.x,pos.y,width].every(Number.isFinite)&&width>0){
+          boxes.push({x:pos.x*factor,y:pos.y*factor,right:(pos.x+width)*factor,bottom:(pos.y+(m.ParentStaffLine?.StaffHeight??4))*factor,staff});
         }
       }
     }
     if(!boxes.length)continue;
-    const x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y));
-    const right=Math.max(...boxes.map(b=>b.right)),bottom=Math.max(...boxes.map(b=>b.bottom));
-    if(![x,y,right,bottom].every(Number.isFinite)||right<=x||bottom<=y)continue;
-    const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    rect.setAttribute('data-pt-measure-background',String(measure));
-    for(const [name,val] of Object.entries({x,y,width:right-x,height:bottom-y,fill:color,'fill-opacity':activeListening?(measure===activeWaitingMeasure?ACTIVE_WAITING_OPACITY:1):(isOutside?PT_OUTSIDE_LESSON_ALPHA:PT_EVALUATION_MEASURE_ALPHA),'pointer-events':'none'}))rect.setAttribute(name,String(val));
-    out.push(rect);
+    const splitEvaluation=!activeListening&&!isOutside&&showEvaluationMeasureBackgrounds&&
+      evaluatedMeasures.has(measure)&&evaluatedStaffs.size===1;
+    const regions=splitEvaluation?boxes.map(box=>({boxes:[box],staff:box.staff})):[{boxes}];
+    for(const region of regions){
+      const x=Math.min(...region.boxes.map(b=>b.x)),y=Math.min(...region.boxes.map(b=>b.y));
+      const right=Math.max(...region.boxes.map(b=>b.right)),bottom=Math.max(...region.boxes.map(b=>b.bottom));
+      if(![x,y,right,bottom].every(Number.isFinite)||right<=x||bottom<=y)continue;
+      const unevaluated=splitEvaluation&&!evaluatedStaffs.has(region.staff);
+      const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('data-pt-measure-background',String(measure));
+      if(splitEvaluation){
+        rect.setAttribute('data-pt-staff',String(region.staff));
+        if(!unevaluated)rect.setAttribute('data-pt-evaluated-hand','true');
+      }
+      const alpha=unevaluated?PT_UNEVALUATED_STAFF_ALPHA:activeListening
+        ?(measure===activeWaitingMeasure?ACTIVE_WAITING_OPACITY:1)
+        :(isOutside?PT_OUTSIDE_LESSON_ALPHA:PT_EVALUATION_MEASURE_ALPHA);
+      for(const [name,val] of Object.entries({x,y,width:right-x,height:bottom-y,fill:unevaluated?PT_UNEVALUATED_STAFF_COLOR:color,'fill-opacity':alpha,'pointer-events':'none'}))rect.setAttribute(name,String(val));
+      out.push(rect);
+    }
   }
   // Los puntos inesperados se superponen sin alterar MusicXML.
   if(!out.length){renderUnexpectedMarkers(svg);keepActiveCursorAboveHighlights();return;}
@@ -1074,7 +1095,8 @@ function renderMeasureHighlights(){
 function renderUnexpectedMarkers(svg){
   svg.querySelectorAll('[data-pt-unexpected]').forEach(el=>el.remove());
   for(const [markerIndex,marker] of evaluatedUnexpected.entries()){
-    const box=svg.querySelector(`[data-pt-measure-background="${marker.measure}"]`);
+    const box=svg.querySelector(`[data-pt-measure-background="${marker.measure}"][data-pt-evaluated-hand]`)
+      ??svg.querySelector(`[data-pt-measure-background="${marker.measure}"]`);
     if(!box)continue;
     const start=measureStartTick(marker.measure),end=measureStartTick(marker.measure+1);
     const proportion=Math.max(0,Math.min(1,(marker.tick-start)/((end??(start+4*(jsonScore?.ppq||480)))-start)));
@@ -1091,8 +1113,24 @@ function refreshEvaluationPresentation(){
   // Una recarga es necesaria para restaurar limpiamente los colores originales
   // cuando algunas notas dejan de estar falladas. No se modifica sourceXmlText.
   const tick=lastCursorTick;
-  renderScore(xmlText).then(()=>{if(Number.isFinite(tick))moveScoreCursor(tick,true);else showPassageStart();})
+  evaluationRenderPromise=renderScore(xmlText).then(()=>{if(Number.isFinite(tick))moveScoreCursor(tick,true);else showPassageStart();})
     .catch(error=>console.warn('[OSMD] Error al actualizar colores:',error));
+}
+async function resetEvaluationPresentation({render=false}={}){
+  // Terminar cualquier render de resultados antes de cambiar de partitura.
+  await evaluationRenderPromise;
+  leaveEditMode();
+  evaluatedNotes.clear();evaluatedMeasures.clear();evaluatedMessages.clear();evaluatedStaffs.clear();
+  evaluatedUnexpected=[];reviewEntries=[];reviewIndex=-1;reviewMessage=null;
+  showEvaluationMeasureBackgrounds=false;
+  resultsEmpty.hidden=false;resultsContent.hidden=true;
+  resultsBars.replaceChildren();resultsMeasures.replaceChildren();
+  resultsMeasuresHead.innerHTML='<th>Compás</th>';
+  if(render&&osmd&&xmlText){
+    const tick=lastCursorTick;
+    await renderScore(xmlText);
+    if(Number.isFinite(tick))moveScoreCursor(tick,true);else showPassageStart();
+  }
 }
 function clearEvaluationMeasureBackgrounds(){
   showEvaluationMeasureBackgrounds=false;
@@ -1116,6 +1154,9 @@ async function getRecentScore(){
 }
 async function activateMovement(index){
   if(!sourceXmlText||!movements.length)return false;
+  await forceStopBeforeMusicLoad();
+  await resetEvaluationPresentation();
+  currentSession=null;
   currentMovementIndex=Math.max(0,Math.min(movements.length-1,Number(index)||0));
   movementInput.value=String(currentMovementIndex);
   xmlText=movementXml(sourceXmlText,movements[currentMovementIndex]);
@@ -1126,6 +1167,7 @@ async function activateMovement(index){
   return true;
 }
 async function forceStopBeforeMusicLoad(){
+  if(activeListening)await deactivateActiveListening();
   if(playbackState===PT_PLAYBACK_STATE.STOPPED)return;
   const wasRecording=isRecording();
   midiStopPromise=stopMidiSession();await midiStopPromise;
@@ -1202,7 +1244,7 @@ movementInput.addEventListener('change',async()=>{
   try{
     // Conserva BPM/rango del movimiento que abandonamos y las opciones comunes actuales.
     if(lesson){const current=lessonFromControls();validateLesson(current);saveLessonPreference(current);}
-    endCurrentPlayback();
+    await forceStopBeforeMusicLoad();
     currentMovementIndex=Number(movementInput.value)||0;
     // Persiste inmediatamente qué movimiento queda seleccionado.
     const saved=storedLessonPreference()??{};
@@ -1438,7 +1480,11 @@ async function fullStop({returnToStart=true}={}){
   updateMidiControls();
   if(returnToStart)showPassageStart();
 }
-async function keyboardStop(){await fullStop();}
+async function keyboardStop(){
+  const alreadyStopped=!activeListening&&playbackState===PT_PLAYBACK_STATE.STOPPED&&!isRecording();
+  await fullStop();
+  if(alreadyStopped){await resetEvaluationPresentation({render:true});showPassageStart();}
+}
 async function setModeAndStart(mode){
   await fullStop();
   if(!jsonScore)return;
@@ -2175,7 +2221,7 @@ followScoreInput.addEventListener('change',configureScoreFollowing);
 for(const button of asideButtons) button.addEventListener('click',()=>setAsideView(button.dataset.asideView));
 window.addEventListener('resize',configureWorkspace);
 configureWorkspace();
-panicButton.addEventListener('click',()=>{if(activeListening){deactivateActiveListening().catch(console.error);return;}fullStop().catch(error=>{console.error(error);alert(error.message);});});
+panicButton.addEventListener('click',()=>{if(activeListening){deactivateActiveListening().catch(console.error);return;}keyboardStop().catch(error=>{console.error(error);alert(error.message);});});
 
 function fillSelect(select,ports,kind){select.innerHTML='';if(!ports.length){select.add(new Option(`— Sin dispositivo MIDI ${kind} —`,''));select.disabled=true;return;}select.disabled=false;for(const p of ports)select.add(new Option(p.name||p.manufacturer||p.id,p.id));}
 function storedMidiPreference(key){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}}
