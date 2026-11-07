@@ -1,6 +1,17 @@
-# Piano Tutor v0.78
+# Piano Tutor v0.79
 
 Aplicación web local para cargar MusicXML, visualizarlo con OSMD, reproducirlo por Web MIDI y capturar interpretaciones MIDI del alumno.
+
+
+## Novedades v0.79
+
+- Revisión con mano, nota o acorde escrito y detalle del error; omisiones completas y parciales diferenciadas.
+- Panel informativo de edición y revisión más compacto, con texto centrado.
+- Cursor de Escucha activa visible sobre el último ataque mientras espera el siguiente compás; cierre correcto de acordes en una o dos manos.
+- Flechas para borrar y repetir compases en OFF y FLEXIBLE; suspenden el metrónomo flexible al navegar y permiten avanzar de nuevo entre los compases borrados.
+- Limpieza de evaluación al cambiar de pieza o movimiento, o pulsar STOP estando parado; gris claro para la mano no evaluada.
+- Selector de metrónomo siempre habilitado mediante botón o `M`; edición de mordentes mediante `Mayús+M`.
+- Trazas de consola limitadas a `?debug=true`; el botón Depurar sustituye a Ocultar y abre un panel independiente de desarrollo.
 
 
 ## Novedades v0.78
@@ -145,6 +156,18 @@ Prueba conceptual de feedback visual mediante APIs/modelo de OSMD, sin manipulac
 Servir la carpeta mediante HTTP (por ejemplo Live Server). Web MIDI no debe ejecutarse desde `file://`.
 
 Los dispositivos MIDI se descubren mediante un iframe desechable para evitar mantener `MIDIAccess` vivo cuando no es necesario.
+
+### Depuración y recuperación de Escucha activa
+
+Añadir `?debug=true` a la URL habilita las trazas de consola de la aplicación (incluidos avisos y errores) y sustituye el botón **Ocultar** por **Depurar**, que abre un panel independiente **Desarrollador**, con la configuración de la lección, el JSON musical y ExpectedPerformance. Sin ese parámetro, el panel permanece oculto y la aplicación no emite esas trazas. Los mensajes del navegador y de bibliotecas externas son independientes.
+
+El selector OFF/FLEXIBLE/ESTRICTO está siempre habilitado; `M` cambia y guarda su modo también estando parado. En edición, el atajo para alternar mordentes es ahora `Mayús+M`.
+
+Cambiar de movimiento o de pieza elimina la evaluación anterior, incluidos fondos, colores de notas y resultados. STOP sobre una sesión ya parada también limpia la evaluación; el primer STOP de una sesión en marcha conserva sus resultados para revisarlos.
+
+La consola registra `[ACTIVE INPUT]` (notas MIDI, compás de captura y estado del cursor), `[RECOGNITION]` (patrones esperados, coincidencias, rechazos, esperas y confirmaciones) y `[ACTIVE REWIND]` (borrado manual). Los detalles se imprimen como texto JSON para poder copiarlos junto con una descripción del problema.
+
+Durante una Escucha activa ya iniciada, con el metrónomo en OFF o FLEXIBLE, `←` borra la captura y las referencias de evaluación del compás pendiente y vuelve a su inicio. Otra pulsación sin tocar borra el anterior y retrocede a su inicio. `→` permite avanzar entre los compases borrados hasta el compás donde se detuvo la interpretación; si aún no se ha borrado nada, reinicia ese compás. Si se vuelve a tocar, la siguiente pulsación reinicia de nuevo ese mismo compás. Los compases anteriores al borrado se conservan; el retroceso se detiene en el primer compás. La tecla mantenida no encadena borrados. En FLEXIBLE las flechas fuerzan la suspensión del metrónomo aunque todavía esté sonando; permanece suspendido mientras se navega y se reactiva al reconocer de nuevo la interpretación con tempo fiable.
 
 
 ## Repertorio (v0.38)
