@@ -74,6 +74,9 @@ let activeFirstMelodyTime=null,activeFirstMelodyTick=null;
 let activeFollowAnchor=null,activeFollowTimer=null,activeLastStudentOn=null,activeFollowBpm=null,activeFlexSuspended=true;
 let activeExpectedMeasure=null,activeRecognizedTick=null,activeRelocalizing=false,activeLastConfirmedHand=[];
 let activeRecognizer=null,activeCapturedEvents=[];
+const activeCaptureOpenNotes=new Map();
+let activeRewindReadyMeasure=null;
+let activeRewindLimitMeasure=null;
 let activeStartingMeasure=null,activeWaitingMeasure=null,activeMeasuredBpm=null;
 const activeInitialVisitedMeasures=new Set();
 const ACTIVE_WAITING_COLOR='#fff2b7';
@@ -95,7 +98,7 @@ function initializeActiveRecognizer(configuredStart){
   activeRecognizer=createMeasureRecognizer(jsonScore,{
     fullExpectedPerformance:activeFullExpectedPerformance,
     initialMeasure:configuredStart,
-    onDebug:(...args)=>console.log('[RECOGNITION]',...args), //debug.midi.recognition
+    onDebug:debugEnabled?(message,data)=>console.log('[RECOGNITION]',message,JSON.stringify(data)):undefined, //debug.midi.recognition
     onRecognized:activeRecognizedMeasure,
     onProgress:activeRecognitionProgress
   });
@@ -994,9 +997,14 @@ function keepActiveCursorAboveHighlights(){
   if(!activeListening)return;
   const score=$('#score');
   if(!score)return;
+  // OSMD show() restablece el z-index (normalmente a -1/-2).
+  // Mostrar primero y elevar después, para no taparlo con los fondos SVG.
+  osmd?.cursor?.show();
   // En ciertas versiones de OSMD el cursor es un div superpuesto y en otras
   // un grupo SVG; en ambos casos elevamos solo esa capa, no la partitura.
-  for(const element of score.querySelectorAll('.cursor, [class*="cursor" i], [id*="cursor" i]')){
+  const elements=new Set(score.querySelectorAll('.cursor, [class*="cursor" i], [id*="cursor" i]'));
+  if(osmd?.cursor?.cursorElement)elements.add(osmd.cursor.cursorElement);
+  for(const element of elements){
     if(element.closest('[data-pt-measure-background]'))continue;
     if(element instanceof HTMLElement){
       element.style.position=element.style.position||'absolute';
@@ -1006,7 +1014,6 @@ function keepActiveCursorAboveHighlights(){
       element.parentNode.appendChild(element);
     }
   }
-  if(osmd?.cursor){osmd.cursor.show();}
 }
 function renderMeasureHighlights(){
   if(!osmd||!jsonScore)return;
@@ -1512,6 +1519,7 @@ function clearActiveFlexStop(){
   if(activeFlexStopTimer!==null){clearTimeout(activeFlexStopTimer);activeFlexStopTimer=null;}
 }
 function resetActiveFragment(startTime=null){
+  activeCaptureOpenNotes.clear();activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;
   activeCapturedEvents=[];activeFragmentStartTime=startTime;activeMelodyStarted=false;activeFirstMelodyTime=null;activeFirstMelodyTick=null;
   activeFragmentFirstMeasure=null;activeFragmentLastMeasure=null;
   activeFragmentHands=new Set();activeFragmentConfirmed=false;activeFragmentAnchors=[];
@@ -1719,10 +1727,12 @@ function startActiveRelocalization(now,reason){
   scheduleFlexibleStopAfterCurrentMeasure(now,previousAnchor);
   activeRecognizer?.enterRelocalization(now);
   activeWaitingMeasure=activeRecognizer?.getProgress().expectedMeasure??activeStartingMeasure;
-  const tick=measureStartTick(activeWaitingMeasure);
-  if(Number.isFinite(tick))moveScoreCursor(tick,true);
+  // El fondo anticipa el compás pendiente; el cursor conserva el último ataque.
+  // Una espera sin nuevas notas nunca debe desplazarlo al siguiente compás.
   renderMeasureHighlights();
-  console.log('[RECOGNITION] Seguimiento congelado; espera secuencial',reason); //debug.midi.recognition
+  console.log('[RECOGNITION] Seguimiento congelado; espera secuencial',JSON.stringify({motivo:reason,
+    tiempo:Math.round(now),anclaAnterior:previousAnchor,cursorTick:lastCursorTick,
+    ultimoAtaque:activeLastMusicalAttackTime,reconocimiento:activeRecognizer?.getProgress()})); //debug.midi.recognition
 }
 function startActiveFollow(){
   stopActiveFollow();activeFollowTimer=setInterval(()=>{
@@ -1787,13 +1797,19 @@ function activeMidiInput(data,time){
   if(activeListening && !activeListeningPaused && pitch<ACTIVE_TAP_MIN_PITCH &&
      (command===0x80 || command===0x90)){
     const isOn=command===0x90&&velocity>0;
-    const event={type:isOn?'noteOn':'noteOff',pitch,velocity,channel,time};
+    const heldKey=`${channel}:${pitch}`;
+    const measure=isOn?activeRecognizer?.captureMeasure(time):activeCaptureOpenNotes.get(heldKey)?.measure;
+    const event={type:isOn?'noteOn':'noteOff',pitch,velocity,channel,time,measure};
     // Conservamos todos los eventos interpretados (incluidos sus OFF) para
     // reconstruir posteriormente la interpretación y las duraciones reales.
-    activeCapturedEvents.push(event);
-    const heldKey=`${channel}:${pitch}`;
+    if(isOn||Number.isInteger(measure))activeCapturedEvents.push(event);
+    if(isOn){activeCaptureOpenNotes.set(heldKey,event);activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;}
+    else activeCaptureOpenNotes.delete(heldKey);
     if(isOn){activeHeldKeys.add(heldKey);activeLastMusicalAttackTime=time;}
     else activeHeldKeys.delete(heldKey);
+    console.log('[ACTIVE INPUT]',JSON.stringify({tipo:event.type,nota:pitchName(pitch),pitch,canal:channel+1,
+      tiempo:Math.round(time),compasCaptura:measure??null,cursorTick:lastCursorTick,
+      reconocimiento:activeRecognizer?.getProgress(),teclasPulsadas:[...activeHeldKeys]}));
     if(isOn){
       // Sólo un ataque asignado a la partitura inicia la interpretación; las
       // pulsaciones C7+ ni el tiempo de espera cuentan para evaluación.
@@ -1915,6 +1931,49 @@ function shiftActiveStartingMeasure(delta){
   keepActiveCursorAboveHighlights();
   return true;
 }
+function canRewindActiveMeasure(){
+  return activeListening&&!activeListeningPaused&&Boolean(activeRecognizer)&&Boolean(jsonScore)&&
+    (activeMetronomeMode==='off'||activeMetronomeMode==='flexible');
+}
+function rewindActiveMeasure(direction=-1){
+  if(!canRewindActiveMeasure())return false;
+  const pending=Math.min(jsonScore.measures,activeRecognizer.getProgress().expectedMeasure);
+  activeRewindLimitMeasure??=pending;
+  const target=activeRewindReadyMeasure===pending
+    ?direction>0?Math.min(activeRewindLimitMeasure,pending+1):Math.max(1,pending-1)
+    :pending;
+  const before=activeCapturedEvents.length;
+  activeCapturedEvents=activeCapturedEvents.filter(e=>e.measure<target);
+  for(const [key,note] of activeCaptureOpenNotes)if(note.measure>=target)activeCaptureOpenNotes.delete(key);
+  activeRecognizer.rewind(target);
+  const retained=activeRecognizer.getConfirmedMeasures();
+  activeFragmentAnchors=activeFragmentAnchors.filter(a=>a.measure<target);
+  activeFragmentConfirmed=retained.length>0;
+  activeFragmentFirstMeasure=retained[0]?.measure??null;
+  activeFragmentLastMeasure=retained.at(-1)?.measure??null;
+  activeFragmentHands=new Set(activeRecognizer.getProgress().hands);
+  if(!activeCapturedEvents.some(e=>e.type==='noteOn')){
+    activeFragmentStartTime=null;activeMelodyStarted=false;activeFirstMelodyTime=null;activeFirstMelodyTick=null;
+  }
+  activeStartingMeasure=Math.min(activeStartingMeasure,target);
+  activeWaitingMeasure=target;activeExpectedMeasure=target;activeRewindReadyMeasure=target;
+  activeFollowAnchor=null;activeRelocalizing=true;activeRecognizedTick=null;activeLastStudentOn=null;
+  activeLastMusicalAttackTime=null;activeLastConfirmedHand=[];
+  activeFollowBpm=retained.at(-1)?.bpm??null;activeMeasuredBpm=activeFollowBpm;
+  if(activeMetronomeMode==='flexible'){
+    activeFlexSuspended=true;activeFlexMeasureGuard=null;activeListeningTempo=null;
+  }
+  clearActiveFlexStop();clearActiveTick();
+  fromInput.value=String(activeStartingMeasure);
+  syncMeasureInputBounds();lessonDirty=true;saveLessonPreference(lessonFromControls());
+  showEvaluationMeasureBackgrounds=false;
+  moveScoreCursor(measureStartTick(target),true);renderMeasureHighlights();keepActiveCursorAboveHighlights();
+  showActiveListeningStatus();
+  console.log('[ACTIVE REWIND]',JSON.stringify({compas:target,eventosBorrados:before-activeCapturedEvents.length,
+    eventosConservados:activeCapturedEvents.length,compasesConfirmados:retained.map(c=>c.measure),
+    cursorTick:lastCursorTick,reconocimiento:activeRecognizer.getProgress()}));
+  return true;
+}
 function toggleActiveListeningPause(){
   if(!activeListening)return false;
   activeLog('Conmutación pausa/reanudación', {estabaPausado:activeListeningPaused,tempoDetectado:!!activeListeningTempo});
@@ -1923,8 +1982,7 @@ function toggleActiveListeningPause(){
     activeListeningPaused=true;
     activeRecognizer?.enterRelocalization(performance.now());
     activeWaitingMeasure=activeRecognizer?.getProgress().expectedMeasure??activeStartingMeasure;
-    const waitTick=measureStartTick(activeWaitingMeasure);
-    if(Number.isFinite(waitTick))moveScoreCursor(waitTick,true);
+    // Pausar tampoco interpreta el comienzo del compás pendiente.
     activeFollowAnchor=null;activeRelocalizing=true;
     renderMeasureHighlights();
     activeRemainingToTick=activeMeterRunning()&&activeListeningTempo?Math.max(0,(activeNextTickAt??performance.now())-performance.now()):null;
@@ -2042,7 +2100,7 @@ function activeRecognitionProgress(result){
       }
     }
     renderMeasureHighlights();
-    requestAnimationFrame(()=>{if(activeListening&&osmd?.cursor){setCursorAppearance(false);osmd.cursor.show();}});
+    requestAnimationFrame(()=>{if(activeListening&&osmd?.cursor){setCursorAppearance(false);keepActiveCursorAboveHighlights();}});
   }
 }
 function toggleActiveMetronome(){
@@ -2082,6 +2140,10 @@ window.addEventListener('keydown',async event=>{
   if(plain&&event.key.toLowerCase()==='a'){event.preventDefault();leaveEditMode();if(!activeListening)await activateActiveListening();return;}
   if(activeListening){
     if(plain&&event.key.toLowerCase()==='m'){event.preventDefault();toggleActiveMetronome();return;}
+    if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&canRewindActiveMeasure()&&
+       (activeMelodyStarted||activeFragmentConfirmed||activeRewindReadyMeasure!==null||activeCapturedEvents.some(e=>e.type==='noteOn'))){
+      event.preventDefault();if(!event.repeat)rewindActiveMeasure(event.key==='ArrowLeft'?-1:1);return;
+    }
     if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&!activeMelodyStarted&&!activeFragmentConfirmed){
       event.preventDefault();shiftActiveStartingMeasure(event.key==='ArrowLeft'?-1:1);return;
     }

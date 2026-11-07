@@ -1,8 +1,8 @@
-import { groupExpectedAttacks, groupCapturedAttacks } from './pt_attack_groups.js';
+import { groupExpectedAttacks, groupCapturedAttacks, CAPTURED_CHORD_WINDOW_MS } from './pt_attack_groups.js';
 
 // Reconocedor estrictamente secuencial: únicamente el compás pendiente.
 // La referencia completa del movimiento se mantiene inmutable.
-const CHORD_WINDOW_MS=75;
+const CHORD_WINDOW_MS=CAPTURED_CHORD_WINDOW_MS;
 const MIN_BPM=20, MAX_BPM=300;
 const SILENCE_GRACE_MS=1700;
 function estimateTempo(pairs,ppq){
@@ -29,8 +29,10 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
   let pending=Math.max(1,Math.min(score.measures,initialMeasure));
   let lastConfirmed=null,firstConfirmed=null,lastTempo=null;
   const hands=new Set();
+  const confirmations=new Map();
   let selectedHand=null; // Provisional RIGHT/LEFT; BOTH queda fijado al descubrir ambas.
   let attempts=[],lastMatchedAt=null,waiting=true,lastDiagnostic="";
+  let consumedAttackUntil=-Infinity;
   let deferredClosure=null;
   function clearDeferred(){if(deferredClosure!==null){clearTimeout(deferredClosure);deferredClosure=null;}}
   // Cada compás se interpreta de manera independiente: ninguna puntuación
@@ -124,6 +126,14 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
     clearDeferred();
     const groups=groupCapturedAttacks(attempts);
     const best=select(groups);
+    onDebug('Estado del intento',{
+      compas:pending,manoFijada:selectedHand,ultimoAtaque:attempts.at(-1)??null,
+      gruposRecibidos:groups.length,ultimosGrupos:groups.slice(-8).map(g=>({tiempo:g.time,notas:g.pitches})),
+      candidato:best?{mano:best.variant.hand,cobertura:best.coverage,calidad:best.quality,
+        sinCoincidencia:best.misses,costeRitmico:best.rhythmCost,
+        esperados:best.variant.groups.map(g=>({tick:g.tick,notas:g.pitches})),
+        coincidencias:best.matched}:null
+    });
     if(!best||!best.matched.length){
       const observed=groups.at(-1)?.pitches??[];
       const expected=(byMeasure.get(pending)||[]).map(v=>({mano:v.hand,esperado:v.groups.slice(0,5).map(g=>g.pitches)}));
@@ -141,13 +151,17 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
     }
     const count=best.variant.groups.length;
     const required=count<=2?count:Math.max(2,Math.ceil(count*.72));
-    if(best.matched.length<required||latest.index<count-1)return;
+    if(best.matched.length<required||latest.index<count-1){
+      onDebug('Compás pendiente',{compas:pending,motivo:best.matched.length<required?'Cobertura insuficiente':'Falta el último ataque',coincidencias:best.matched.length,requeridas:required,ultimoIndice:latest.index,totalGrupos:count});
+      return;
+    }
     // Un acorde final puede llegar en varios NoteOn dentro de la ventana MIDI.
     // No cerrar el compás con el primer dedo cuando faltan notas simultáneas.
-    if(best.variant.hand==='both'&&!forceSingle){
+    if(!forceSingle){
       const expected=[...best.variant.groups.at(-1).pitches];
       for(const pitch of latest.pitches){const i=expected.indexOf(pitch);if(i>=0)expected.splice(i,1);}
       if(expected.length){
+        onDebug('Esperando notas del acorde final',{compas:pending,mano:best.variant.hand,faltan:expected,esperaMs:CHORD_WINDOW_MS+30});
         deferredClosure=setTimeout(()=>{deferredClosure=null;apply(true);},CHORD_WINDOW_MS+30);
         return;
       }
@@ -163,6 +177,7 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
         // si no llega ninguna nota más, confirmamos la mano presente tras una espera acotada.
         const tempo=estimateTempo(best.matched,score.ppq||480)||lastTempo||90;
         const delay=Math.max(220,Math.min(1600,(otherLast-latest.tick)*60000/(tempo*(score.ppq||480))+180));
+        onDebug('Esperando posible entrada de la otra mano',{compas:pending,mano:best.variant.hand,ultimoTick:latest.tick,otroUltimoTick:otherLast,esperaMs:delay});
         deferredClosure=setTimeout(()=>{deferredClosure=null;apply(true);},delay);
         return;
       }
@@ -172,11 +187,15 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
     if(best.variant.hand==='both'){hands.add('right');hands.add('left');selectedHand='both';}
     else {hands.add(best.variant.hand);selectedHand??=best.variant.hand;}
     firstConfirmed??=measure;lastConfirmed=measure;pending=measure+1;
+    // Los NoteOn restantes del mismo ataque pertenecen al compás cerrado.
+    // Solo se excluyen del reconocedor: la captura MIDI conserva todos ellos.
+    consumedAttackUntil=latest.time+CHORD_WINDOW_MS;
     const confirmed={measure,hand:best.variant.hand,bpm:tempo??lastTempo,
       confidence:best.coverage,firstMeasure:firstConfirmed,lastMeasure:measure,
       hands:[...hands],lastTick:latest.tick,lastTime:latest.time,
       segmentStartTime:best.matched[0].time,expectedMeasure:pending};
-    onRecognized(confirmed);onDebug('Compás secuencial confirmado',confirmed);
+    confirmations.set(measure,confirmed);
+    onRecognized(confirmed);onDebug('Compás secuencial confirmado',{...confirmed,cierreForzado:forceSingle});
     // No perder un ataque de transición: los ataques de este compás
     // permanecen en CapturedPerformance, pero no se reevalúan aquí.
     attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";
@@ -184,14 +203,29 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
   return {
     feed({pitch,velocity,time}){
       if(!Number.isInteger(pitch)||pitch<0||pitch>=96||velocity<=0||pending>score.measures)return;
-      if(attempts.length&&time-attempts.at(-1).time>SILENCE_GRACE_MS&&waiting){attempts=[];}
+      if(time<consumedAttackUntil){onDebug('Nota del ataque ya consumido',{compas:pending,pitch,time,hasta:consumedAttackUntil});return;}
+      if(attempts.length&&time-attempts.at(-1).time>SILENCE_GRACE_MS&&waiting){onDebug('Ventana vaciada por silencio',{compas:pending,ataquesDescartados:attempts.length});attempts=[];}
       attempts.push({pitch,time});
-      if(attempts.length>80)attempts=attempts.slice(-80);
+      if(attempts.length>80){onDebug('Historial limitado a 80 ataques',{compas:pending});attempts=attempts.slice(-80);}
       apply();
     },
     // La pausa/no reconocimiento no hace ninguna búsqueda en otros compases.
-    enterRelocalization(){clearDeferred();attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";},
-    getProgress:()=>({firstConfirmed,lastConfirmed,expectedMeasure:pending,relocating:waiting,hands:[...hands]}),
-    reset(){clearDeferred();attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";pending=initialMeasure;lastConfirmed=null;firstConfirmed=null;lastTempo=null;hands.clear();selectedHand=null;}
+    enterRelocalization(){onDebug('Reinicio de evidencia por espera o pausa',{compas:pending,ataquesDescartados:attempts.length});clearDeferred();attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";},
+    captureMeasure(time){return time<consumedAttackUntil?lastConfirmed:Math.min(score.measures,pending);},
+    getConfirmedMeasures:()=>[...confirmations.values()].map(c=>({...c,hands:[...c.hands]})),
+    rewind(measure){
+      const target=Math.max(1,Math.min(score.measures,measure));
+      clearDeferred();attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";consumedAttackUntil=-Infinity;
+      for(const key of confirmations.keys())if(key>=target)confirmations.delete(key);
+      const retained=[...confirmations.values()];
+      pending=target;firstConfirmed=retained[0]?.measure??null;lastConfirmed=retained.at(-1)?.measure??null;
+      lastTempo=retained.at(-1)?.bpm??null;hands.clear();
+      for(const c of retained)for(const hand of c.hands)hands.add(hand);
+      selectedHand=hands.size===2?'both':([...hands][0]??null);
+      onDebug('Compás borrado y reconocedor rearmado',{compas:target,conservados:retained.map(c=>c.measure),manos:[...hands]});
+      return target;
+    },
+    getProgress:()=>({firstConfirmed,lastConfirmed,expectedMeasure:pending,relocating:waiting,hands:[...hands],attemptCount:attempts.length,lastMatchedAt,selectedHand,lastTempo}),
+    reset(){clearDeferred();confirmations.clear();attempts=[];lastMatchedAt=null;waiting=true;lastDiagnostic="";consumedAttackUntil=-Infinity;pending=initialMeasure;lastConfirmed=null;firstConfirmed=null;lastTempo=null;hands.clear();selectedHand=null;}
   };
 }
