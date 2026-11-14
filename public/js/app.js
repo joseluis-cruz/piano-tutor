@@ -6,7 +6,7 @@ import { createSession, PT_HAND } from './session/pt_session.js';
 import { PT_EVENT } from './core/pt_events.js';
 import { setMetronomeDrumKit } from './core/pt_metronome.js';
 import { consolidatePerformance, consolidateResults, noteErrorKinds } from './session/pt_evaluator.js';
-import { initMidi, refreshMidiDevices, getMidiInputs, getMidiOutputs, setInputDevice, setOutputDevice, openSelectedMidiPorts, stopAndCloseMidi, stopMidiSession, setMidiThru, isMidiContextActive, setMidiAutoStopCallback, releaseMidiIfIdle, play, pause, resume, seek, stop, startRecording, stopRecording, pauseRecording, resumeRecording, getCapturedPerformance, isRecording, PT_PLAYBACK_STATE, setMidiInputObserver, sendLiveMetronomeNote } from './midi/pt_midi.js';
+import { initMidi, refreshMidiDevices, getMidiInputs, getMidiOutputs, setInputDevice, setOutputDevice, openSelectedMidiPorts, stopAndCloseMidi, stopMidiSession, setMidiThru, isMidiContextActive, setMidiAutoStopCallback, releaseMidiIfIdle, play, appendPlaybackEvents, pause, resume, seek, stop, startRecording, stopRecording, pauseRecording, resumeRecording, getCapturedPerformance, isRecording, PT_PLAYBACK_STATE, setMidiInputObserver, sendLiveMetronomeNote } from './midi/pt_midi.js';
 
 const $ = s => document.querySelector(s);
 const fileInput=$('#musicxml-file'), downloadMusicXMLButton=$('#download-musicxml'), loadUrlButton=$('#load-url'), urlDialog=$('#url-dialog'), urlForm=$('#url-form'), urlInput=$('#musicxml-url'), urlCancelButton=$('#url-cancel'), output=$('#json-output'), metadataOutput=$('#score-metadata');
@@ -80,6 +80,7 @@ let activeRecognizer=null,activeCapturedEvents=[];
 const activeCaptureOpenNotes=new Map();
 let activeRewindReadyMeasure=null;
 let activeRewindLimitMeasure=null;
+let activeReferencePlayback=null;
 let activeStartingMeasure=null,activeWaitingMeasure=null,activeMeasuredBpm=null;
 const activeInitialVisitedMeasures=new Set();
 const ACTIVE_WAITING_COLOR='#fff2b7';
@@ -1416,7 +1417,7 @@ async function startStoppedSession(){
   else startSessionPlayback();
   return true;
 }
-playButton.addEventListener('click',async()=>{leaveEditMode();if(activeListening){toggleActiveListeningPause();return;}try{
+playButton.addEventListener('click',async()=>{leaveEditMode();if(activeListening){if(activeReferencePlayback)finishActiveReferencePlayback();else toggleActiveListeningPause();return;}try{
   if(playbackState===PT_PLAYBACK_STATE.PLAYING){
     if(freeRecordingActive){if(isRecording())pauseRecording();setPlaybackState(PT_PLAYBACK_STATE.PAUSED);return;}
     if(pause()){if(isRecording())pauseRecording();setPlaybackState(PT_PLAYBACK_STATE.PAUSED);}return;
@@ -1927,6 +1928,7 @@ function activeMidiInput(data,time){
 }
 
 async function deactivateActiveListening(){
+  if(activeReferencePlayback){activeReferencePlayback=null;stop();}
   activeLog('Desactivación de escucha activa', {eventosCapturados:activeCapturedEvents.length,reconocimiento:activeRecognizer?.getProgress()});
   if(activeListening)evaluateActiveFragment();
   clearActiveFlexStop();resetActiveFragment();
@@ -1993,6 +1995,9 @@ function rewindActiveMeasure(direction=-1){
   const target=activeRewindReadyMeasure===pending
     ?direction>0?Math.min(activeRewindLimitMeasure,pending+1):Math.max(1,pending-1)
     :pending;
+  return resetActiveMeasure(target);
+}
+function resetActiveMeasure(target){
   const before=activeCapturedEvents.length;
   activeCapturedEvents=activeCapturedEvents.filter(e=>e.measure<target);
   for(const [key,note] of activeCaptureOpenNotes)if(note.measure>=target)activeCaptureOpenNotes.delete(key);
@@ -2023,6 +2028,90 @@ function rewindActiveMeasure(direction=-1){
   console.log('[ACTIVE REWIND]',JSON.stringify({compas:target,eventosBorrados:before-activeCapturedEvents.length,
     eventosConservados:activeCapturedEvents.length,compasesConfirmados:retained.map(c=>c.measure),
     cursorTick:lastCursorTick,reconocimiento:activeRecognizer.getProgress()}));
+  return true;
+}
+function activeReferenceSequence(request,measure){
+  const session=createSession(jsonScore,{...lessonFromControls(),fromMeasure:measure,toMeasure:measure,
+    bpm:request.bpm,intro:false,metronome:false},{playbackHand:PT_HAND.BOTH,evaluateHand:PT_HAND.NONE,
+    intro:false,metronome:false});
+  const offset=(session.config.originTick-request.originTick)*60000/(request.bpm*jsonScore.ppq);
+  return session.playbackSequence.map(event=>({...event,referenceMeasure:measure,timeOn:event.timeOn+offset,timeOff:event.timeOff+offset}));
+}
+function updateActiveReferenceStatus(request){
+  const remaining=Math.max(0,request.endMeasure-request.completedMeasure);
+  setTransportStatus('playing',`Escuchando ${remaining} ${remaining===1?'compás':'compases'}`);
+}
+function finishActiveReferencePlayback(){
+  const request=activeReferencePlayback;
+  if(!request)return false;
+  activeReferencePlayback=null;
+  stop();
+  activeListeningPaused=false;
+  activeListeningTempo=null;activeStrictTempoLocked=false;activeStrictTempoFromTap=false;
+  activeFlexSuspended=true;activeFlexMeasureGuard=null;activeRemainingToTick=null;
+  clearActiveTap();activeHeldKeys.clear();
+  setPlaybackState(PT_PLAYBACK_STATE.STOPPED);
+  if(activeListening){resetActiveMeasure(request.startMeasure);updateMidiControls();}
+  console.log('[ACTIVE REFERENCE] Fin',JSON.stringify({inicio:request.startMeasure,fin:request.endMeasure}));
+  return true;
+}
+function startOrExtendActiveReferencePlayback(){
+  if(!activeListening||!jsonScore||!activeRecognizer)return false;
+  if(activeReferencePlayback){
+    const request=activeReferencePlayback;
+    if(request.endMeasure>=jsonScore.measures)return true;
+    try{
+      const next=request.endMeasure+1;
+      const events=activeReferenceSequence(request,next);
+      request.endMeasure=next;
+      if(!appendPlaybackEvents(events))throw new Error('La reproducción de referencia ya no está activa.');
+      updateActiveReferenceStatus(request);
+      console.log('[ACTIVE REFERENCE] Compás añadido',JSON.stringify({inicio:request.startMeasure,fin:next}));
+    }catch(error){finishActiveReferencePlayback();console.error('[ACTIVE REFERENCE]',error);alert(error.message);}
+    return true;
+  }
+  const cursorMeasure=measurePositionAtTick(lastCursorTick??measureStartTick(activeStartingMeasure))?.measure??activeStartingMeasure;
+  const measure=Math.max(1,Math.min(jsonScore.measures,cursorMeasure));
+  const request={startMeasure:measure,endMeasure:measure,completedMeasure:measure-1,originTick:measureStartTick(measure),
+    bpm:activeMeasuredBpm||activeFollowBpm||Number(bpmInput.value)||80};
+  try{
+    const events=activeReferenceSequence(request,measure);
+    resetActiveMeasure(measure);
+    // Las teclas de compases conservados no deben quedar abiertas durante
+    // la referencia, cuyos mensajes MIDI de entrada no se van a capturar.
+    const now=performance.now();
+    for(const note of activeCaptureOpenNotes.values())activeCapturedEvents.push({
+      type:'noteOff',pitch:note.pitch,channel:note.channel,velocity:0,time:now,measure:note.measure});
+    activeCaptureOpenNotes.clear();
+    activeRewindLimitMeasure=measure;
+    activeListeningPaused=true;
+    activeListeningTempo=null;activeStrictTempoLocked=false;activeStrictTempoFromTap=false;
+    activeFlexSuspended=true;activeFlexMeasureGuard=null;
+    clearActiveTap();activeHeldKeys.clear();
+    activeReferencePlayback=request;
+    setPlaybackState(PT_PLAYBACK_STATE.PLAYING);
+    updateActiveReferenceStatus(request);
+    play(events,{
+      onEvent:event=>{
+        if(activeReferencePlayback!==request||!activeListening)return;
+        if(event.type===PT_EVENT.PASSAGE_START){
+          activeWaitingMeasure=event.referenceMeasure;
+          request.completedMeasure=Math.max(request.completedMeasure,event.referenceMeasure-1);
+          renderMeasureHighlights();updateActiveReferenceStatus(request);
+        }
+        if(event.type===PT_EVENT.PASSAGE_END){
+          request.completedMeasure=Math.max(request.completedMeasure,event.referenceMeasure);
+          updateActiveReferenceStatus(request);
+        }
+        if(event.type!==PT_EVENT.PASSAGE_END&&Number.isFinite(event.startTick))moveScoreCursor(event.startTick,true);
+      },
+      onEnd:()=>{if(activeReferencePlayback===request)finishActiveReferencePlayback();}
+    });
+    console.log('[ACTIVE REFERENCE] Inicio',JSON.stringify(request));
+  }catch(error){
+    if(activeReferencePlayback)finishActiveReferencePlayback();
+    console.error('[ACTIVE REFERENCE]',error);alert(error.message);
+  }
   return true;
 }
 function toggleActiveListeningPause(){
@@ -2188,8 +2277,8 @@ window.addEventListener('keydown',async event=>{
   if(isEditableTarget(event.target))return;
   const plain=!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey;
   if(plain&&event.key.toLowerCase()==='m'){event.preventDefault();toggleActiveMetronome();return;}
-  if(plain&&event.code==='Space'){event.preventDefault();leaveEditMode();if(activeListening){toggleActiveListeningPause();return;}playButton.click();return;}
-  if(plain&&event.key==='Escape'){event.preventDefault();leaveEditMode();if(activeListening){await deactivateActiveListening();return;}await keyboardStop();return;}
+  if(plain&&event.code==='Space'){event.preventDefault();leaveEditMode();if(activeListening){if(!event.repeat)startOrExtendActiveReferencePlayback();return;}playButton.click();return;}
+  if(plain&&event.key==='Escape'){event.preventDefault();leaveEditMode();if(activeReferencePlayback){finishActiveReferencePlayback();return;}if(activeListening){await deactivateActiveListening();return;}await keyboardStop();return;}
   if(plain&&event.key.toLowerCase()==='a'){event.preventDefault();leaveEditMode();if(!activeListening)await activateActiveListening();return;}
   if(activeListening){
     if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&canRewindActiveMeasure()&&

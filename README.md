@@ -169,6 +169,8 @@ La consola registra `[ACTIVE INPUT]` (notas MIDI, compás de captura y estado de
 
 Durante una Escucha activa ya iniciada, con el metrónomo en OFF o FLEXIBLE, `←` borra la captura y las referencias de evaluación del compás pendiente y vuelve a su inicio. Otra pulsación sin tocar borra el anterior y retrocede a su inicio. `→` permite avanzar entre los compases borrados hasta el compás donde se detuvo la interpretación; si aún no se ha borrado nada, reinicia ese compás. Si se vuelve a tocar, la siguiente pulsación reinicia de nuevo ese mismo compás. Los compases anteriores al borrado se conservan; el retroceso se detiene en el primer compás. La tecla mantenida no encadena borrados. En FLEXIBLE las flechas fuerzan la suspensión del metrónomo aunque todavía esté sonando; permanece suspendido mientras se navega y se reactiva al reconocer de nuevo la interpretación con tempo fiable.
 
+En Escucha activa, `Espacio` borra la captura desde el compás del cursor y reproduce ese compás como referencia, con ambas manos y sin introducción ni metrónomo. Cada nueva pulsación durante la reproducción añade el compás siguiente sin reiniciar lo que ya está sonando, hasta el final del movimiento. Mantener la tecla pulsada no añade compases. La captura permanece suspendida mientras suena la referencia. Al terminar, o al pulsar `Esc` durante ella, el cursor vuelve al inicio del compás original, con la captura borrada desde ese compás y listo para escuchar al intérprete; los compases anteriores se conservan. Fuera de esa reproducción, `Esc` sigue desactivando la Escucha activa y evaluando la interpretación.
+
 
 ## Repertorio (v0.38)
 

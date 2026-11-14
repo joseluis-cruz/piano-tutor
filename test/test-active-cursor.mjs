@@ -126,7 +126,7 @@ Object.assign(state, {
     { pitch: 81, startTick: 4320, endTick: 4560, measure: 3, channel: 0 }
   ] }
 });
-for (const name of ['activeMidiInput', 'canRewindActiveMeasure', 'rewindActiveMeasure']) vm.runInContext(appFunction(name), state);
+for (const name of ['activeMidiInput', 'canRewindActiveMeasure', 'rewindActiveMeasure', 'resetActiveMeasure']) vm.runInContext(appFunction(name), state);
 const diagnostics = [];
 state.activeRecognizer = createMeasureRecognizer(state.jsonScore, {
   fullExpectedPerformance: { events: state.jsonScore.events },

@@ -224,6 +224,15 @@ export function getCapturedPerformance(){return {type:'CapturedPerformance',even
 export const isRecording=()=>recording;
 
 export function play(sequence,callbacks={}){const needsOutput=sequence.some(e=>[PT_EVENT.NOTE,PT_EVENT.METRONOME,PT_EVENT.MORDENT,PT_EVENT.CONTROL_CHANGE].includes(e.type));if(needsOutput&&!selectedOutputId)throw new Error('No hay MIDI OUT seleccionado.');stop();clearThruTimer('playback started');const token=++playbackToken;const startedAt=performance.now();playback={events:[...sequence],index:0,startedAt,pausedAt:0,callbacks:{onStart:callbacks.onStart,onClock:callbacks.onClock,onEvent:callbacks.onEvent,onEnd:callbacks.onEnd}};playbackState=PT_PLAYBACK_STATE.PLAYING;playback.callbacks.onStart?.(startedAt);pump(token);}
+export function appendPlaybackEvents(events){
+  if(!playback)return false;
+  const pending=[...playback.events.slice(playback.index),...events]
+    .sort((a,b)=>a.timeOn-b.timeOn||(a.pitch??-1)-(b.pitch??-1));
+  playback.events=[...playback.events.slice(0,playback.index),...pending];
+  clearQueueTimer();
+  if(playbackState===PT_PLAYBACK_STATE.PLAYING)pump(playbackToken);
+  return true;
+}
 export function pause(){if(!playback||playbackState!==PT_PLAYBACK_STATE.PLAYING)return false;playback.pausedAt=performance.now()-playback.startedAt;playbackState=PT_PLAYBACK_STATE.PAUSED;clearQueueTimer();silenceActiveNotes();return true;}
 export function resume(){if(!playback||playbackState!==PT_PLAYBACK_STATE.PAUSED)return false;playback.startedAt=performance.now()-playback.pausedAt;playbackState=PT_PLAYBACK_STATE.PLAYING;clearThruTimer('playback resumed');pump(playbackToken);return true;}
 export function seek(timeMs=0){if(!playback)return false;const target=Math.max(0,Number(timeMs)||0),wasPlaying=playbackState===PT_PLAYBACK_STATE.PLAYING;clearQueueTimer();silenceActiveNotes();playback.index=playback.events.findIndex(e=>e.timeOn>=target);if(playback.index<0)playback.index=playback.events.length;playback.pausedAt=target;playback.startedAt=performance.now()-target;if(wasPlaying)pump(playbackToken);return true;}
