@@ -1,4 +1,8 @@
-export const debugEnabled = new URLSearchParams(globalThis.location?.search ?? '').get('debug') === 'true';
+export let debugEnabled = new URLSearchParams(globalThis.location?.search ?? '').get('debug') === 'true';
+
+export function setDebugEnabled(enabled) {
+  debugEnabled = Boolean(enabled);
+}
 
 // Consola local de la aplicación; no modifica la consola global ni la de OSMD.
 export const debugConsole = Object.fromEntries(

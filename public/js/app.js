@@ -1,5 +1,5 @@
 import { MusicXMLParser } from './music/MusicXMLParser.js';
-import { debugEnabled, debugConsole as console } from './core/pt_debug.js';
+import { debugEnabled, setDebugEnabled, debugConsole as console } from './core/pt_debug.js';
 import { createMeasureRecognizer } from './session/pt_recognizer.js';
 import { buildReviewEntries } from './session/pt_review.js';
 import { createSession, PT_HAND } from './session/pt_session.js';
@@ -19,6 +19,7 @@ const asideViews={repertoire:$('#repertoire-aside'),lesson:$('#lesson-aside'),re
 const repertoireStatus=$('#repertoire-status'), repertoirePieces=$('#repertoire-pieces'), repertoireLessons=$('#repertoire-lessons'), repertoirePieceTrigger=$('#repertoire-piece-trigger'), repertoirePieceMenu=$('#repertoire-piece-menu'), repertoireCurrentTitle=$('#repertoire-current-title'), repertoireCurrentMeta=$('#repertoire-current-meta');
 const editFeedback=$('#edit-feedback'), activeListeningSwitch=$('#active-listening'), activeMetronomeButton=$('#active-metronome-mode');
 const resultsEmpty=$('#results-empty'), resultsContent=$('#results-content'), resultsBars=$('#results-bars'), resultsMeasures=$('#results-measures'), resultsMeasuresHead=$('#results-measures-head');
+const developerModeInput=$('#developer-mode');
 let sourceXmlText='', xmlText='', movements=[], currentMovementIndex=0, jsonScore=null, lesson=null, currentSession=null, osmd=null, playbackState=PT_PLAYBACK_STATE.STOPPED, lastCursorTick=null, lessonDirty=false;
 let editMode=false, selectedNote=null, selectedGraphicalNote=null;
 let currentScoreName='partitura.musicxml', scoreModified=false;
@@ -103,7 +104,7 @@ function initializeActiveRecognizer(configuredStart){
   activeRecognizer=createMeasureRecognizer(jsonScore,{
     fullExpectedPerformance:activeFullExpectedPerformance,
     initialMeasure:configuredStart,
-    onDebug:debugEnabled?(message,data)=>console.log('[RECOGNITION]',message,JSON.stringify(data)):undefined, //debug.midi.recognition
+    onDebug:(message,data)=>{if(debugEnabled)console.log('[RECOGNITION]',message,JSON.stringify(data));}, //debug.midi.recognition
     onRecognized:activeRecognizedMeasure,
     onProgress:activeRecognitionProgress
   });
@@ -160,6 +161,8 @@ const PT_DURATION_TOO_SHORT_RATIO=0.55;
 const PT_DURATION_TOO_LONG_RATIO=1.80;
 
 configureDeveloperPanel();
+developerModeInput.checked=debugEnabled;
+developerModeInput.addEventListener('change',()=>setDeveloperMode(developerModeInput.checked));
 
 const STORAGE_MIDI_IN='pianoTutor.midiIn';
 const STORAGE_MIDI_OUT='pianoTutor.midiOut';
@@ -328,6 +331,15 @@ function configureDeveloperPanel(){
   if(!button)return;
   button.dataset.asideView=debugEnabled?'developer':'hidden';
   button.textContent=debugEnabled?'Depurar':'Ocultar';
+  const selected=debugEnabled?!asideViews.developer.hidden:workspace.classList.contains('settings-closed');
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+}
+function setDeveloperMode(enabled){
+  setDebugEnabled(enabled);
+  developerModeInput.checked=debugEnabled;
+  configureDeveloperPanel();
+  if(!debugEnabled&&!asideViews.developer.hidden)setAsideView('settings');
 }
 function setAsideView(view){
   const normalized=view==='developer'&&!debugEnabled?'hidden':view in asideViews?view:'hidden';

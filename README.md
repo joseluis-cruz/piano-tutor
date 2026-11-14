@@ -159,7 +159,7 @@ Los dispositivos MIDI se descubren mediante un iframe desechable para evitar man
 
 ### Depuración y recuperación de Escucha activa
 
-Añadir `?debug=true` a la URL habilita las trazas de consola de la aplicación (incluidos avisos y errores) y sustituye el botón **Ocultar** por **Depurar**, que abre un panel independiente **Desarrollador**, con la configuración de la lección, el JSON musical y ExpectedPerformance. Sin ese parámetro, el panel permanece oculto y la aplicación no emite esas trazas. Los mensajes del navegador y de bibliotecas externas son independientes.
+El interruptor **Modo desarrollador**, en Configuración, se inicializa con el parámetro `debug` de la URL (`?debug=true` lo enciende). Permite activar y desactivar las trazas de consola de la aplicación, incluidos avisos y errores, sin recargar ni reiniciar una Escucha activa. Al encenderlo, el botón **Ocultar** pasa a **Depurar** y abre un panel independiente **Desarrollador**, con la configuración de la lección, el JSON musical y ExpectedPerformance. Al apagarlo se silencian las trazas y se recupera **Ocultar**. El interruptor no se persiste: una recarga vuelve a tomar el valor de la URL. Los mensajes del navegador y de bibliotecas externas son independientes.
 
 El selector OFF/FLEXIBLE/ESTRICTO está siempre habilitado; `M` cambia y guarda su modo también estando parado. En edición, el atajo para alternar mordentes es ahora `Mayús+M`.
 

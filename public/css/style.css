@@ -195,6 +195,8 @@ body:has(.edit-feedback:not([hidden])) .workspace{height:calc(100vh - var(--tran
 .active-listening-toggle input:checked + .active-listening-track{background:#178b5b}
 .active-listening-toggle input:checked + .active-listening-track::after{transform:translateX(17px)}
 .active-listening-toggle input:focus-visible + .active-listening-track{outline:2px solid #fff;outline-offset:3px}
+.developer-mode-toggle{color:#20242a;margin-right:0}
+.developer-mode-toggle input:focus-visible + .active-listening-track{outline-color:#1677d2}
 .edit-feedback{min-height:34px;max-height:110px;overflow:auto;flex:none}
 .edit-feedback.is-clear{background:#e8f8e9;color:#18542c;border-bottom-color:#a9d6b1}
 .edit-feedback:not(.is-clear){background:#fff2bf;color:#852626}
