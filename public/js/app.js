@@ -81,6 +81,7 @@ const activeCaptureOpenNotes=new Map();
 let activeRewindReadyMeasure=null;
 let activeRewindLimitMeasure=null;
 let activeReferencePlayback=null;
+let activeHasPerformed=false;
 let activeStartingMeasure=null,activeWaitingMeasure=null,activeMeasuredBpm=null;
 const activeInitialVisitedMeasures=new Set();
 const ACTIVE_WAITING_COLOR='#fff2b7';
@@ -1571,6 +1572,7 @@ function clearActiveFlexStop(){
   if(activeFlexStopTimer!==null){clearTimeout(activeFlexStopTimer);activeFlexStopTimer=null;}
 }
 function resetActiveFragment(startTime=null){
+  activeHasPerformed=false;
   activeCaptureOpenNotes.clear();activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;
   activeCapturedEvents=[];activeFragmentStartTime=startTime;activeMelodyStarted=false;activeFirstMelodyTime=null;activeFirstMelodyTick=null;
   activeFragmentFirstMeasure=null;activeFragmentLastMeasure=null;
@@ -1855,7 +1857,7 @@ function activeMidiInput(data,time){
     // Conservamos todos los eventos interpretados (incluidos sus OFF) para
     // reconstruir posteriormente la interpretación y las duraciones reales.
     if(isOn||Number.isInteger(measure))activeCapturedEvents.push(event);
-    if(isOn){activeCaptureOpenNotes.set(heldKey,event);activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;}
+    if(isOn){activeCaptureOpenNotes.set(heldKey,event);activeHasPerformed=true;activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;}
     else activeCaptureOpenNotes.delete(heldKey);
     if(isOn){activeHeldKeys.add(heldKey);activeLastMusicalAttackTime=time;}
     else activeHeldKeys.delete(heldKey);
@@ -1962,9 +1964,11 @@ async function activateActiveListening(){
 }
 function shiftActiveStartingMeasure(delta){
   if(!activeListening||activeListeningPaused||activeMelodyStarted||activeFragmentConfirmed||!jsonScore)return false;
-  const next=Math.max(1,Math.min(jsonScore.measures,activeStartingMeasure+delta));
-  if(next===activeStartingMeasure)return true;
+  const current=activeWaitingMeasure??activeStartingMeasure;
+  const next=Math.max(1,Math.min(jsonScore.measures,current+delta));
+  if(next===current)return true;
   activeInitialVisitedMeasures.add(activeStartingMeasure);
+  activeRewindReadyMeasure=null;activeRewindLimitMeasure=null;
   activeStartingMeasure=next;
   activeWaitingMeasure=next;
   activeExpectedMeasure=null;
@@ -2274,19 +2278,23 @@ activeListeningSwitch.addEventListener('change',async()=>{
   if(activeListeningSwitch.checked)await activateActiveListening();else await deactivateActiveListening();
 });
 window.addEventListener('keydown',async event=>{
-  if(isEditableTarget(event.target))return;
+  // El interruptor suele conservar el foco al activar la escucha. Sus flechas
+  // deben navegar por la partitura; las de campos de texto/números, editar.
+  const activeArrow=activeListening&&(event.key==='ArrowLeft'||event.key==='ArrowRight');
+  const toggleFocused=event.target?.matches?.('input[type="checkbox"],input[type="radio"]');
+  if(isEditableTarget(event.target)&&!(activeArrow&&toggleFocused))return;
   const plain=!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey;
   if(plain&&event.key.toLowerCase()==='m'){event.preventDefault();toggleActiveMetronome();return;}
   if(plain&&event.code==='Space'){event.preventDefault();leaveEditMode();if(activeListening){if(!event.repeat)startOrExtendActiveReferencePlayback();return;}playButton.click();return;}
   if(plain&&event.key==='Escape'){event.preventDefault();leaveEditMode();if(activeReferencePlayback){finishActiveReferencePlayback();return;}if(activeListening){await deactivateActiveListening();return;}await keyboardStop();return;}
   if(plain&&event.key.toLowerCase()==='a'){event.preventDefault();leaveEditMode();if(!activeListening)await activateActiveListening();return;}
   if(activeListening){
-    if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&canRewindActiveMeasure()&&
-       (activeMelodyStarted||activeFragmentConfirmed||activeRewindReadyMeasure!==null||activeCapturedEvents.some(e=>e.type==='noteOn'))){
-      event.preventDefault();if(!event.repeat)rewindActiveMeasure(event.key==='ArrowLeft'?-1:1);return;
-    }
-    if(plain&&(event.key==='ArrowLeft'||event.key==='ArrowRight')&&!activeMelodyStarted&&!activeFragmentConfirmed){
-      event.preventDefault();shiftActiveStartingMeasure(event.key==='ArrowLeft'?-1:1);return;
+    if(plain&&activeArrow){
+      event.preventDefault();
+      const hasTake=activeHasPerformed||activeMelodyStarted||activeFragmentConfirmed||activeCapturedEvents.some(e=>e.type==='noteOn');
+      if(!hasTake)shiftActiveStartingMeasure(event.key==='ArrowLeft'?-1:1);
+      else if(!event.repeat&&canRewindActiveMeasure())rewindActiveMeasure(event.key==='ArrowLeft'?-1:1);
+      return;
     }
     return;
   }

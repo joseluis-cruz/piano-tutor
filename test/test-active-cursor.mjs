@@ -24,7 +24,7 @@ const state = {
   activeStartingMeasure: 1, activeWaitingMeasure: 1, activeExpectedMeasure: null,
   activeFollowAnchor: null, activeFollowBpm: null, activeLastStudentOn: null,
   lastCursorTick: null, activeLastMusicalAttackTime: null,
-  activeMelodyStarted: false, activeFirstMelodyTime: null, activeFirstMelodyTick: null,
+  activeHasPerformed: false, activeMelodyStarted: false, activeFirstMelodyTime: null, activeFirstMelodyTick: null,
   activeFragmentStartTime: null, activeFragmentFirstMeasure: null, activeFragmentLastMeasure: null,
   activeFragmentConfirmed: false, activeFragmentHands: new Set(), activeFragmentAnchors: [],
   activeCapturedEvents: [], activeRecognizedTick: null, activeMeasuredBpm: null,
