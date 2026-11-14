@@ -5,6 +5,8 @@ import { groupExpectedAttacks, groupCapturedAttacks, CAPTURED_CHORD_WINDOW_MS } 
 const CHORD_WINDOW_MS=CAPTURED_CHORD_WINDOW_MS;
 const MIN_BPM=20, MAX_BPM=300;
 const SILENCE_GRACE_MS=1700;
+// Recuperar omisiones cercanas sin saltar hasta una altura repetida lejana.
+const MAX_EXPECTED_GROUP_LOOKAHEAD=3;
 function estimateTempo(pairs,ppq){
   const values=[];
   for(let i=1;i<pairs.length;i++){
@@ -52,36 +54,59 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
     const reference=scales[Math.floor(scales.length/2)];
     return intervals.reduce((sum,x)=>sum+Math.min(1.5,Math.abs(Math.log((x.dt/x.ticks)/reference))),0)/intervals.length;
   }
+  function alignVariant(variant,groups){
+    let cursor=0, matched=[], missed=0, unexplained=0, lateNotes=0;
+    const rejectedJumps=[];
+    for(const group of groups){
+      const observed={...group,pitches:[...group.pitches]};
+      const previous=matched.at(-1);
+      if(previous){
+        // Una mano puede llegar después de la ventana MIDI del acorde. Antes
+        // de buscar notas repetidas más adelante, completar el ataque actual.
+        const missing=[...variant.groups[previous.index].pitches];
+        for(const pitch of previous.pitches){const i=missing.indexOf(pitch);if(i>=0)missing.splice(i,1);}
+        observed.pitches=observed.pitches.filter(pitch=>{
+          const i=missing.indexOf(pitch);
+          if(i<0)return true;
+          missing.splice(i,1);previous.pitches.push(pitch);lateNotes++;return false;
+        });
+        if(!observed.pitches.length)continue;
+      }
+      let index=-1, overlap=0, extra=Infinity;
+      const limit=Math.min(variant.groups.length,cursor+MAX_EXPECTED_GROUP_LOOKAHEAD+1);
+      for(let k=cursor;k<limit;k++){
+        const pool=[...variant.groups[k].pitches];
+        let common=0;
+        for(const pitch of observed.pitches){
+          const pos=pool.indexOf(pitch);
+          if(pos>=0){pool.splice(pos,1);common++;}
+        }
+        const unmatched=observed.pitches.length-common;
+        if(common>overlap||(common===overlap&&common>0&&unmatched<extra)){
+          index=k;overlap=common;extra=unmatched;
+        }
+        if(common===observed.pitches.length&&common>0)break;
+      }
+      if(index<0||overlap===0){
+        const distant=variant.groups.findIndex((expected,i)=>i>=limit&&expected.pitches.some(p=>observed.pitches.includes(p)));
+        if(distant>=0)rejectedJumps.push({recibido:observed.pitches,indicePendiente:cursor,
+          esperadoSiguiente:variant.groups[cursor]?.pitches,indiceLejano:distant,tickLejano:variant.groups[distant].tick});
+        missed++;continue;
+      }
+      matched.push({tick:variant.groups[index].tick,time:observed.time,index,pitches:observed.pitches});
+      unexplained+=extra;cursor=index+1;
+    }
+    const coverage=matched.length/variant.groups.length;
+    const rhythmCost=relativeRhythmCost(matched);
+    const quality=coverage*6+matched.length*.4-unexplained*1.5-missed*.5-rhythmCost*.6;
+    return {variant,matched,coverage,quality,misses:missed,rhythmCost,lateNotes,rejectedJumps};
+  }
   function select(groups){
     let best=null;
     for(const variant of byMeasure.get(pending)||[]){
       if(selectedHand==='both'&&variant.hand!=='both')continue;
       if(selectedHand&&selectedHand!=='both'&&variant.hand!==selectedHand&&variant.hand!=='both')continue;
-      let cursor=0, matched=[], missed=0, unexplained=0;
-      for(const observed of groups){
-        let index=-1, overlap=0, extra=Infinity;
-        for(let k=cursor;k<variant.groups.length;k++){
-          const pool=[...variant.groups[k].pitches];
-          let common=0;
-          for(const pitch of observed.pitches){
-            const pos=pool.indexOf(pitch);
-            if(pos>=0){pool.splice(pos,1);common++;}
-          }
-          const unmatched=observed.pitches.length-common;
-          if(common>overlap||(common===overlap&&common>0&&unmatched<extra)){
-            index=k;overlap=common;extra=unmatched;
-          }
-          if(common===observed.pitches.length&&common>0)break;
-        }
-        if(index<0||overlap===0){missed++;continue;}
-        matched.push({tick:variant.groups[index].tick,time:observed.time,index,pitches:observed.pitches});
-        unexplained+=extra;cursor=index+1;
-      }
-      const coverage=matched.length/variant.groups.length;
-      const rhythmCost=relativeRhythmCost(matched);
-      // Preferir una mano bien explicada frente a ambas parcialmente explicadas.
-      const quality=coverage*6+matched.length*.4-unexplained*1.5-missed*.5-rhythmCost*.6;
-      const candidate={variant,matched,coverage,quality,misses:missed,rhythmCost};
+      const candidate=alignVariant(variant,groups);
       if(!best||candidate.quality>best.quality)best=candidate;
     }
     // La detección de manos no es un concurso de porcentajes de cobertura:
@@ -100,24 +125,7 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
         const exclusive=variant.groups.flatMap(g=>g.pitches).filter(p=>!others?.groups.some(g=>g.pitches.includes(p)));
         if(exclusive.some(p=>observedPitches.includes(p)))support.add(hand);
       }
-      const bothCandidate=(() => {
-        let cursor=0,matched=[],missed=0,unexplained=0;
-        for(const observed of groups){
-          let index=-1,overlap=0,extra=Infinity;
-          for(let k=cursor;k<both.groups.length;k++){
-            const pool=[...both.groups[k].pitches];let common=0;
-            for(const pitch of observed.pitches){const pos=pool.indexOf(pitch);if(pos>=0){pool.splice(pos,1);common++;}}
-            const unmatched=observed.pitches.length-common;
-            if(common>overlap||(common===overlap&&common>0&&unmatched<extra)){index=k;overlap=common;extra=unmatched;}
-            if(common===observed.pitches.length&&common>0)break;
-          }
-          if(index<0||overlap===0){missed++;continue;}
-          matched.push({tick:both.groups[index].tick,time:observed.time,index,pitches:observed.pitches});
-          unexplained+=extra;cursor=index+1;
-        }
-        return {variant:both,matched,coverage:matched.length/both.groups.length,
-          quality:matched.length*.4-unexplained*1.5-missed*.5,misses:missed,rhythmCost:relativeRhythmCost(matched)};
-      })();
+      const bothCandidate=alignVariant(both,groups);
       if((selectedHand==='both'||support.size===2)&&bothCandidate.matched.length)return bothCandidate;
     }
     return best;
@@ -130,7 +138,8 @@ export function createMeasureRecognizer(score,{initialMeasure=1,fullExpectedPerf
       compas:pending,manoFijada:selectedHand,ultimoAtaque:attempts.at(-1)??null,
       gruposRecibidos:groups.length,ultimosGrupos:groups.slice(-8).map(g=>({tiempo:g.time,notas:g.pitches})),
       candidato:best?{mano:best.variant.hand,cobertura:best.coverage,calidad:best.quality,
-        sinCoincidencia:best.misses,costeRitmico:best.rhythmCost,
+        sinCoincidencia:best.misses,costeRitmico:best.rhythmCost,notasTardiasDelAtaque:best.lateNotes,
+        saltosLejanosDescartados:best.rejectedJumps,
         esperados:best.variant.groups.map(g=>({tick:g.tick,notas:g.pitches})),
         coincidencias:best.matched}:null
     });

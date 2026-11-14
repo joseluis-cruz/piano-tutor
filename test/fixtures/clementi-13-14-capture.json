@@ -1,0 +1,213 @@
+{
+  "description": "Captura MIDI facilitada por el usuario: Clementi, compases 13–14. La referencia espera Fa4 donde la captura contiene Sol4.",
+  "expectedGroups": {
+    "13": [
+      {
+        "tick": 17280,
+        "notas": [
+          59,
+          77
+        ]
+      },
+      {
+        "tick": 17520,
+        "notas": [
+          55
+        ]
+      },
+      {
+        "tick": 17760,
+        "notas": [
+          59
+        ]
+      },
+      {
+        "tick": 18000,
+        "notas": [
+          55,
+          81
+        ]
+      },
+      {
+        "tick": 18120,
+        "notas": [
+          77
+        ]
+      },
+      {
+        "tick": 18240,
+        "notas": [
+          60,
+          76
+        ]
+      },
+      {
+        "tick": 18480,
+        "notas": [
+          55,
+          79
+        ]
+      }
+    ],
+    "14": [
+      {
+        "tick": 18720,
+        "notas": [
+          65,
+          71
+        ]
+      },
+      {
+        "tick": 18960,
+        "notas": [
+          55
+        ]
+      },
+      {
+        "tick": 19200,
+        "notas": [
+          65
+        ]
+      },
+      {
+        "tick": 19440,
+        "notas": [
+          55,
+          74
+        ]
+      },
+      {
+        "tick": 19560,
+        "notas": [
+          71
+        ]
+      },
+      {
+        "tick": 19680,
+        "notas": [
+          64,
+          72
+        ]
+      },
+      {
+        "tick": 19920,
+        "notas": [
+          55,
+          67
+        ]
+      }
+    ]
+  },
+  "captured": [
+    {
+      "pitch": 59,
+      "time": 113861,
+      "measure": 13
+    },
+    {
+      "pitch": 77,
+      "time": 113896,
+      "measure": 13
+    },
+    {
+      "pitch": 55,
+      "time": 114219,
+      "measure": 13
+    },
+    {
+      "pitch": 59,
+      "time": 114543,
+      "measure": 13
+    },
+    {
+      "pitch": 81,
+      "time": 114860,
+      "measure": 13
+    },
+    {
+      "pitch": 55,
+      "time": 114893,
+      "measure": 13
+    },
+    {
+      "pitch": 77,
+      "time": 115008,
+      "measure": 13
+    },
+    {
+      "pitch": 60,
+      "time": 115217,
+      "measure": 13
+    },
+    {
+      "pitch": 76,
+      "time": 115253,
+      "measure": 13
+    },
+    {
+      "pitch": 79,
+      "time": 115521,
+      "measure": 13
+    },
+    {
+      "pitch": 55,
+      "time": 115558,
+      "measure": 13
+    },
+    {
+      "pitch": 71,
+      "time": 115856,
+      "measure": 14
+    },
+    {
+      "pitch": 67,
+      "time": 115906,
+      "measure": 14
+    },
+    {
+      "pitch": 55,
+      "time": 116219,
+      "measure": 14
+    },
+    {
+      "pitch": 67,
+      "time": 116578,
+      "measure": 14
+    },
+    {
+      "pitch": 74,
+      "time": 116898,
+      "measure": 14
+    },
+    {
+      "pitch": 55,
+      "time": 116907,
+      "measure": 14
+    },
+    {
+      "pitch": 71,
+      "time": 117046,
+      "measure": 14
+    },
+    {
+      "pitch": 72,
+      "time": 117223,
+      "measure": 14
+    },
+    {
+      "pitch": 64,
+      "time": 117244,
+      "measure": 14
+    },
+    {
+      "pitch": 55,
+      "time": 117557,
+      "measure": 14
+    },
+    {
+      "pitch": 67,
+      "time": 117563,
+      "measure": 14
+    }
+  ]
+}
